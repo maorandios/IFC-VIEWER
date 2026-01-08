@@ -179,6 +179,39 @@ The frontend will be available at `http://localhost:5173`
 - Multiple file comparison
 - Export to other formats (PDF, Excel)
 
+## Auto Git Push (Optional)
+
+The project includes an automatic git commit and push feature that watches for file changes and automatically saves them to GitHub.
+
+### How to Use Auto Git Push
+
+1. **Start the auto-push watcher** (in a separate terminal):
+   ```powershell
+   .\auto-git-push.ps1
+   ```
+
+2. **Make changes to your code** - The script will automatically:
+   - Detect file changes
+   - Wait 5 seconds after the last change (debounce)
+   - Commit all changes with a timestamp
+   - Push to GitHub automatically
+
+3. **Stop the watcher**: Press `Ctrl+C` in the terminal running the script
+
+### Configuration
+
+You can customize the auto-push behavior by editing `auto-git-push.ps1`:
+- `$DEBOUNCE_SECONDS`: Time to wait after last change before committing (default: 5 seconds)
+- `$GIT_BRANCH`: Git branch to push to (default: "main")
+- `$IGNORE_PATTERNS`: Files/patterns to ignore (already respects .gitignore)
+
+### Important Notes
+
+- ⚠️ **All changes are automatically committed and pushed** - Make sure you're okay with this!
+- The script respects `.gitignore` and won't commit ignored files
+- If there are no changes, it won't create empty commits
+- Errors during push are logged but won't crash the watcher
+
 ## License
 
 This project is provided as-is for demonstration purposes.
