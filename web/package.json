@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.3.2",
     "@tanstack/react-table": "^8.10.7",
     "@thatopen/components": "^3.2.6",
     "@thatopen/fragments": "^3.2.12",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "html2pdf.js": "^0.13.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^2.1.0",
