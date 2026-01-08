@@ -2449,11 +2449,22 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                     oversized_parts = [p for p in remaining_parts if p["length"] > longest_stock]
                     print(f"[NESTING] ERROR: {len(oversized_parts)} parts exceed longest stock ({longest_stock:.0f}mm):")
                     for p in oversized_parts:
-                        part_id = p.get('product_id') or p.get('reference') or p.get('element_name') or 'unknown'
-                        print(f"[NESTING]   - Part {part_id}: {p['length']:.1f}mm > {longest_stock:.0f}mm")
+                        product_id = p.get('product_id')
+                        part_id = product_id or p.get('reference') or p.get('element_name') or 'unknown'
+                        # Get reference and element_name, handling None and empty strings
+                        reference = p.get('reference')
+                        if reference and isinstance(reference, str) and not reference.strip():
+                            reference = None
+                        element_name = p.get('element_name')
+                        if element_name and isinstance(element_name, str) and not element_name.strip():
+                            element_name = None
+                        print(f"[NESTING]   - Part {part_id}: {p['length']:.1f}mm > {longest_stock:.0f}mm, reference={reference}, element_name={element_name}")
                         # Add to rejected parts list
                         rejected_parts.append({
+                            "product_id": product_id,
                             "part_id": part_id,
+                            "reference": reference,
+                            "element_name": element_name,
                             "length": p['length'],
                             "stock_length": longest_stock,
                             "reason": f"Part length ({p['length']:.1f}mm) exceeds longest available stock ({longest_stock:.0f}mm)"
@@ -3117,9 +3128,15 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 for pp in pattern_parts:
                     part_length = pp.get("length", 0)
                     if part_length > best_stock:
-                        part_id = pp.get("part", {}).get("product_id") or pp.get("part", {}).get("reference") or pp.get("part", {}).get("element_name") or "unknown"
+                        part_obj = pp.get("part", {})
+                        part_id = part_obj.get("product_id") or part_obj.get("reference") or part_obj.get("element_name") or "unknown"
+                        reference = part_obj.get("reference")
+                        element_name = part_obj.get("element_name")
                         invalid_parts.append({
                             "part": part_id,
+                            "reference": reference,
+                            "element_name": element_name,
+                            "part_obj": part_obj,
                             "length": part_length,
                             "stock": best_stock
                         })
@@ -3143,10 +3160,16 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                     # Add all parts to rejected list
                     for pp in pattern_parts:
                         part_obj = pp.get("part", {})
-                        part_id = part_obj.get("product_id") or part_obj.get("reference") or part_obj.get("element_name") or "unknown"
+                        product_id = part_obj.get("product_id")
+                        part_id = product_id or part_obj.get("reference") or part_obj.get("element_name") or "unknown"
+                        reference = part_obj.get("reference")
+                        element_name = part_obj.get("element_name")
                         part_length = pp.get("length", 0)
                         rejected_parts.append({
+                            "product_id": product_id,
                             "part_id": part_id,
+                            "reference": reference,
+                            "element_name": element_name,
                             "length": part_length,
                             "stock_length": best_stock,
                             "reason": f"Pattern total length ({current_length:.1f}mm) exceeds stock ({best_stock:.0f}mm)"
@@ -3162,10 +3185,15 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 if invalid_parts:
                     print(f"[NESTING] ERROR: Pattern contains {len(invalid_parts)} parts that exceed stock length {best_stock:.0f}mm:")
                     for ip in invalid_parts:
+                        part_obj = ip.get('part_obj', {})
+                        product_id = part_obj.get("product_id") if isinstance(part_obj, dict) else None
                         print(f"[NESTING]   - Part {ip['part']}: {ip['length']:.1f}mm > {ip['stock']:.0f}mm")
                         # Add to rejected parts list
                         rejected_parts.append({
+                            "product_id": product_id,
                             "part_id": ip['part'],
+                            "reference": ip.get('reference'),
+                            "element_name": ip.get('element_name'),
                             "length": ip['length'],
                             "stock_length": ip['stock'],
                             "reason": f"Part length ({ip['length']:.1f}mm) exceeds selected stock ({ip['stock']:.0f}mm)"

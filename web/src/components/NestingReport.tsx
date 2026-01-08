@@ -463,6 +463,108 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
               </div>
             </div>
 
+            {/* Error Parts Table - Only show if there are parts exceeding 12001mm */}
+            {(() => {
+              // Collect all rejected parts from all profiles where length > 12001mm
+              const allErrorParts: Array<{
+                profile_name: string
+                reference: string
+                length: number
+              }> = []
+              
+              nestingReport.profiles.forEach(profile => {
+                if (profile.rejected_parts && profile.rejected_parts.length > 0) {
+                  profile.rejected_parts.forEach(rejectedPart => {
+                    // Only include parts where length > 12001mm
+                    if (rejectedPart.length > 12001) {
+                      // Use the same logic as cutting list: reference || element_name || 'Unknown'
+                      // Handle null, undefined, and empty string
+                      const reference = rejectedPart.reference && rejectedPart.reference.trim() ? rejectedPart.reference : null
+                      const elementName = rejectedPart.element_name && rejectedPart.element_name.trim() ? rejectedPart.element_name : null
+                      const partName = reference || elementName || 'Unknown'
+                      
+                      allErrorParts.push({
+                        profile_name: profile.profile_name,
+                        reference: partName,
+                        length: rejectedPart.length
+                      })
+                    }
+                  })
+                }
+              })
+
+              // Group by profile_name, reference, and length to count quantity
+              const groupedErrorParts = new Map<string, {
+                profile_name: string
+                reference: string
+                length: number
+                quantity: number
+              }>()
+
+              allErrorParts.forEach(part => {
+                const key = `${part.profile_name}|${part.reference}|${part.length.toFixed(2)}`
+                if (groupedErrorParts.has(key)) {
+                  groupedErrorParts.get(key)!.quantity++
+                } else {
+                  groupedErrorParts.set(key, {
+                    profile_name: part.profile_name,
+                    reference: part.reference,
+                    length: part.length,
+                    quantity: 1
+                  })
+                }
+              })
+
+              const errorPartsList = Array.from(groupedErrorParts.values())
+
+              // Only render table if there are error parts
+              if (errorPartsList.length === 0) {
+                return null
+              }
+
+              return (
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold mb-4">Error Parts</h2>
+                  
+                  <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-800 text-white">
+                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold">Profile Type</th>
+                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold">Part Name</th>
+                            <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Cut Length (mm)</th>
+                            <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Quantity</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {errorPartsList.map((part, idx) => (
+                            <tr 
+                              key={`${part.profile_name}-${part.reference}-${idx}`}
+                              className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                            >
+                              <td className="border border-gray-300 px-4 py-3 font-medium">
+                                {part.profile_name}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3">
+                                {part.reference}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {Math.round(part.length)}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {part.quantity}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* Section 2: Cutting Patterns */}
             <div>
               <h2 className="text-2xl font-bold mb-4">Section 2: Cutting Patterns</h2>

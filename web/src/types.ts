@@ -55,6 +55,16 @@ export interface CuttingPattern {
   waste_percentage: number
 }
 
+export interface RejectedPart {
+  product_id?: number  // Product ID to match with cutting patterns
+  part_id: string
+  reference?: string  // Part reference (e.g., "b1 c25")
+  element_name?: string  // Element name as fallback
+  length: number  // in mm
+  stock_length: number  // in mm
+  reason: string
+}
+
 export interface ProfileNesting {
   profile_name: string
   total_parts: number
@@ -63,6 +73,7 @@ export interface ProfileNesting {
   cutting_patterns: CuttingPattern[]
   total_waste: number  // in mm
   total_waste_percentage: number
+  rejected_parts?: RejectedPart[]  // Parts that cannot be nested (exceed stock length)
 }
 
 export interface NestingReport {
