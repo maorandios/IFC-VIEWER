@@ -1,0 +1,2193 @@
+import { useState, useEffect } from 'react'
+import { NestingReport as NestingReportType, SteelReport } from '../types'
+
+interface NestingReportProps {
+  filename: string
+  nestingReport: NestingReportType | null
+  onNestingReportChange: (report: NestingReportType | null) => void
+  report: SteelReport | null  // Report data to get available profiles
+}
+
+type Step = 'select' | 'results'
+
+export default function NestingReport({ filename, nestingReport: propNestingReport, onNestingReportChange, report }: NestingReportProps) {
+  // Use prop as source of truth, but maintain local state for updates
+  const nestingReport = propNestingReport
+  const [currentStep, setCurrentStep] = useState<Step>('select')
+  const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [expandedProfiles, setExpandedProfiles] = useState<Set<string>>(new Set())
+
+  // Get available profiles from report
+  const availableProfiles = report?.profiles || []
+
+  // Default stock lengths: 6000mm and 12000mm
+  const stockLengths = '6000,12000'
+
+  // Don't load nesting data from localStorage - always start fresh
+  // This ensures clean state when uploading new file or refreshing page
+
+  const handleProfileToggle = (profileName: string) => {
+    const newSelected = new Set(selectedProfiles)
+    if (newSelected.has(profileName)) {
+      newSelected.delete(profileName)
+    } else {
+      newSelected.add(profileName)
+    }
+    setSelectedProfiles(newSelected)
+  }
+
+  const handleSelectAll = () => {
+    if (selectedProfiles.size === availableProfiles.length) {
+      setSelectedProfiles(new Set())
+    } else {
+      setSelectedProfiles(new Set(availableProfiles.map(p => p.profile_name)))
+    }
+  }
+
+  const handleNext = () => {
+    if (selectedProfiles.size === 0) {
+      setError('Please select at least one profile to nest')
+      return
+    }
+    setError(null)
+    generateNesting()
+  }
+
+  const handleBack = () => {
+    setCurrentStep('select')
+    setError(null)
+  }
+
+  const handleReset = () => {
+    // Clear all nesting state
+    setSelectedProfiles(new Set())
+    setCurrentStep('select')
+    onNestingReportChange(null)  // Clear nesting report in parent
+    setError(null)
+    
+    // Clear any existing localStorage entries for nesting (cleanup)
+    try {
+      localStorage.removeItem(`nesting_selected_profiles_${filename}`)
+      localStorage.removeItem(`nesting_step_${filename}`)
+    } catch (e) {
+      console.error('Error clearing localStorage:', e)
+    }
+  }
+
+  const generateNesting = async () => {
+    if (!filename || selectedProfiles.size === 0) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const encodedFilename = encodeURIComponent(filename)
+      const params = new URLSearchParams({
+        stock_lengths: stockLengths,
+        profiles: Array.from(selectedProfiles).join(',')  // Pass selected profiles
+      })
+      const url = `/api/nesting/${encodedFilename}?${params.toString()}`
+
+      const response = await fetch(url)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Backend error response:', errorText)
+        throw new Error(`Failed to generate nesting: ${response.status} ${response.statusText}\n\n${errorText}`)
+      }
+
+      const data: NestingReportType = await response.json()
+      onNestingReportChange(data)
+      setCurrentStep('results')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+      console.error('Error generating nesting:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatLength = (mm: number) => {
+    if (mm >= 1000) {
+      return `${(mm / 1000).toFixed(2)}m`
+    }
+    return `${mm.toFixed(0)}mm`
+  }
+
+  const exportToCSV = () => {
+    if (!nestingReport) return
+
+    let csv = 'Profile,Stock Length (mm),Quantity Needed,Total Waste (mm),Waste %\n'
+    
+    nestingReport.profiles.forEach(profile => {
+      Object.entries(profile.stock_lengths_used).forEach(([stockLength, quantity]) => {
+        const profileData = nestingReport.profiles.find(p => p.profile_name === profile.profile_name)
+        if (profileData) {
+          csv += `${profile.profile_name},${stockLength},${quantity},${profile.total_waste.toFixed(2)},${profile.total_waste_percentage.toFixed(2)}%\n`
+        }
+      })
+    })
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${filename.replace('.ifc', '')}_nesting_bom.csv`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header with controls */}
+      <div className="p-4 border-b bg-gray-50">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold">Nesting Optimization</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <div className={`px-3 py-1 rounded text-sm ${currentStep === 'select' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                Step 1: Select Profiles
+              </div>
+              <div className="text-gray-400">→</div>
+              <div className={`px-3 py-1 rounded text-sm ${currentStep === 'results' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                Step 2: Results
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {currentStep === 'results' && (
+              <>
+                <button
+                  onClick={handleBack}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded"
+                >
+                  ← Back
+                </button>
+                <button
+                  onClick={exportToCSV}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded"
+                >
+                  📥 Export BOM
+                </button>
+              </>
+            )}
+            <button
+              onClick={handleReset}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+              title="Reset nesting and start fresh"
+            >
+              🔄 Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            Error: {error}
+          </div>
+        )}
+
+        {/* Step 1: Profile Selection */}
+        {currentStep === 'select' && (
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold mb-2">Select Profiles for Nesting</h3>
+                  <p className="text-gray-600">Choose which profiles you want to optimize for cutting</p>
+                </div>
+                <button
+                  onClick={handleSelectAll}
+                  className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
+                >
+                  {selectedProfiles.size === availableProfiles.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              {availableProfiles.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <p className="text-lg mb-2">No profiles found</p>
+                  <p className="text-sm">Upload an IFC file with beams, columns, or members to see profiles here</p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-blue-900">
+                        {selectedProfiles.size} of {availableProfiles.length} profiles selected
+                      </span>
+                      {selectedProfiles.size > 0 && (
+                        <span className="text-sm text-blue-700">
+                          Total parts: {availableProfiles
+                            .filter(p => selectedProfiles.has(p.profile_name))
+                            .reduce((sum, p) => sum + p.piece_count, 0)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-96 overflow-y-auto border rounded p-2">
+                    {availableProfiles.map((profile, idx) => {
+                      const isSelected = selectedProfiles.has(profile.profile_name)
+                      return (
+                        <label
+                          key={idx}
+                          className={`flex items-center p-4 border rounded cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-blue-50 border-blue-300'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleProfileToggle(profile.profile_name)}
+                            className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <div className="ml-4 flex-1">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-semibold text-lg">{profile.profile_name}</span>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-medium">{profile.piece_count} parts</div>
+                                <div className="text-sm text-gray-500">{(profile.total_weight / 1000).toFixed(2)} tonnes</div>
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      onClick={handleNext}
+                      disabled={loading || selectedProfiles.size === 0}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded font-medium"
+                    >
+                      {loading ? '⏳ Generating...' : 'Generate Nesting →'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Results */}
+        {currentStep === 'results' && !nestingReport && !loading && (
+          <div className="text-center text-gray-500 py-12">
+            <p className="text-lg mb-2">No nesting data generated yet</p>
+            <p className="text-sm">Go back to Step 1 to select profiles and generate nesting</p>
+          </div>
+        )}
+
+        {currentStep === 'results' && nestingReport && (
+          <>
+            {/* Section 1: BOM Summary */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold mb-4">Section 1: BOM Summary</h2>
+              
+              <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-collapse">
+                    <thead>
+                      <tr className="bg-gray-800 text-white">
+                        <th className="border border-gray-300 px-4 py-3 text-left font-semibold">Profile Type</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Bar Stock Length</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Amount of Bars</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Tonnage (tonnes)</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Number of Cuts</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Total Waste Tonnage</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Total Waste in M</th>
+                        <th className="border border-gray-300 px-4 py-3 text-right font-semibold">Total Waste %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nestingReport.profiles.map((profile, profileIdx) => {
+                        // Get profile data from report to calculate weight per meter
+                        const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+                        
+                        // Calculate weight per meter (kg/m) from report data
+                        // weight_per_meter = total_weight_kg / (total_length_mm / 1000)
+                        let weightPerMeter = 0
+                        if (profileData && profile.total_length > 0) {
+                          const totalLengthM = profile.total_length / 1000.0  // Convert mm to meters
+                          weightPerMeter = profileData.total_weight / totalLengthM  // kg per meter
+                        }
+                        
+                        // Group by stock length for this profile
+                        // Filter out entries with 0 bars - only show active bars
+                        const stockLengthEntries = Object.entries(profile.stock_lengths_used)
+                          .filter(([_, barCount]) => barCount > 0)
+                        
+                        return stockLengthEntries.map(([stockLengthStr, barCount], stockIdx) => {
+                          const stockLength = parseFloat(stockLengthStr)  // in mm
+                          const stockLengthM = stockLength / 1000.0  // Convert to meters
+                          
+                          // Calculate tonnage: (weight_per_meter_kg) * (stock_length_m) * (number_of_bars) / 1000
+                          const tonnage = (weightPerMeter * stockLengthM * barCount) / 1000.0  // tonnes
+                          
+                          // Calculate number of cuts for this stock length
+                          // Count patterns that use this stock length
+                          const patternsForThisStock = profile.cutting_patterns.filter(
+                            p => Math.abs(p.stock_length - stockLength) < 0.01
+                          )
+                          
+                          // Number of cuts = sum of (parts per bar - 1) for each bar
+                          // Each bar has (number_of_parts - 1) cuts
+                          const totalCuts = patternsForThisStock.reduce((sum, pattern) => {
+                            return sum + Math.max(0, pattern.parts.length - 1)  // -1 because last part doesn't need a cut
+                          }, 0)
+                          
+                          // Calculate total waste for this stock length
+                          // Sum of waste from all patterns using this stock length
+                          const totalWasteMm = patternsForThisStock.reduce((sum, pattern) => {
+                            return sum + (pattern.waste || 0)
+                          }, 0)
+                          
+                          // Calculate waste in meters
+                          const totalWasteM = totalWasteMm / 1000.0
+                          
+                          // Calculate waste tonnage: (waste_mm / 1000) * weight_per_meter / 1000
+                          const wasteTonnage = weightPerMeter > 0 && totalWasteMm > 0
+                            ? (totalWasteM * weightPerMeter) / 1000.0
+                            : 0
+                          
+                          // Get waste percentage for this stock length
+                          // Average waste percentage across patterns using this stock length
+                          const wasteForThisStock = patternsForThisStock.length > 0
+                            ? patternsForThisStock.reduce((sum, p) => sum + p.waste_percentage, 0) / patternsForThisStock.length
+                            : profile.total_waste_percentage
+                          
+                          return (
+                            <tr 
+                              key={`${profileIdx}-${stockIdx}`}
+                              className={profileIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                            >
+                              <td className="border border-gray-300 px-4 py-3 font-medium">
+                                {profile.profile_name}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {formatLength(stockLength)}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {barCount}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {tonnage > 0 ? tonnage.toFixed(3) : 'N/A'}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {totalCuts}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {wasteTonnage > 0 ? wasteTonnage.toFixed(3) : '0.000'}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                {totalWasteM > 0 ? totalWasteM.toFixed(2) : '0.00'}
+                              </td>
+                              <td className="border border-gray-300 px-4 py-3 text-right">
+                                <span className={wasteForThisStock > 5 ? 'text-red-600 font-semibold' : 'text-green-600'}>
+                                  {wasteForThisStock.toFixed(2)}%
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-100 font-semibold">
+                      <tr>
+                        <td className="border border-gray-300 px-4 py-3">Total</td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">-</td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          {nestingReport.summary.total_stock_bars}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          {nestingReport.profiles.reduce((total, profile) => {
+                            const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+                            if (!profileData || profile.total_length === 0) return total
+                            
+                            const weightPerMeter = profileData.total_weight / (profile.total_length / 1000.0)
+                            const profileTonnage = Object.entries(profile.stock_lengths_used).reduce((sum, [stockLengthStr, barCount]) => {
+                              const stockLengthM = parseFloat(stockLengthStr) / 1000.0
+                              return sum + (weightPerMeter * stockLengthM * barCount) / 1000.0
+                            }, 0)
+                            
+                            return total + profileTonnage
+                          }, 0).toFixed(3)}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          {nestingReport.profiles.reduce((total, profile) => {
+                            return total + profile.cutting_patterns.reduce((sum, pattern) => {
+                              return sum + Math.max(0, pattern.parts.length - 1)
+                            }, 0)
+                          }, 0)}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          {nestingReport.profiles.reduce((total, profile) => {
+                            const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+                            if (!profileData || profile.total_length === 0) return total
+                            
+                            const weightPerMeter = profileData.total_weight / (profile.total_length / 1000.0)
+                            const profileWasteTonnage = profile.cutting_patterns.reduce((sum, pattern) => {
+                              const wasteM = (pattern.waste || 0) / 1000.0
+                              return sum + (wasteM * weightPerMeter) / 1000.0
+                            }, 0)
+                            
+                            return total + profileWasteTonnage
+                          }, 0).toFixed(3)}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          {nestingReport.profiles.reduce((total, profile) => {
+                            const profileWasteM = profile.cutting_patterns.reduce((sum, pattern) => {
+                              return sum + ((pattern.waste || 0) / 1000.0)
+                            }, 0)
+                            return total + profileWasteM
+                          }, 0).toFixed(2)}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-3 text-right">
+                          <span className={nestingReport.summary.average_waste_percentage > 5 ? 'text-red-600' : 'text-green-600'}>
+                            {nestingReport.summary.average_waste_percentage.toFixed(2)}%
+                          </span>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Cutting Patterns */}
+            <div>
+              <h2 className="text-2xl font-bold mb-4">Section 2: Cutting Patterns</h2>
+              {nestingReport.profiles.map((profile, profileIdx) => {
+                const profileKey = profile.profile_name
+                const isExpanded = expandedProfiles.has(profileKey)
+                
+                const toggleProfile = () => {
+                  const newExpanded = new Set(expandedProfiles)
+                  if (isExpanded) {
+                    newExpanded.delete(profileKey)
+                  } else {
+                    newExpanded.add(profileKey)
+                  }
+                  setExpandedProfiles(newExpanded)
+                }
+                
+                return (
+                  <div key={profileIdx} className="mb-4 border rounded">
+                    {/* Collapsible header */}
+                    <button
+                      onClick={toggleProfile}
+                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors rounded-t"
+                    >
+                      <h4 className="font-semibold text-lg text-left">
+                    {profile.profile_name} ({profile.total_parts} parts)
+                  </h4>
+                      <span className="text-gray-600 text-xl font-bold">
+                        {isExpanded ? '−' : '+'}
+                      </span>
+                    </button>
+                  
+                    {/* Collapsible content */}
+                    {isExpanded && (
+                      <div className="p-4">
+                  {profile.cutting_patterns.map((pattern, patternIdx) => (
+                    <div key={patternIdx} className="mb-4 p-3 bg-white rounded">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium">
+                          Bar {patternIdx + 1}: {formatLength(pattern.stock_length)} stock
+                          {(pattern as any).exceeds_stock && (
+                            <span className="ml-2 text-red-600 font-semibold text-xs">
+                              ⚠️ Part exceeds stock length!
+                            </span>
+                          )}
+                        </span>
+                        <div className="flex items-center gap-3">
+                        <span className={`text-sm ${pattern.waste_percentage > 5 ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                          Waste: {formatLength(pattern.waste)} ({pattern.waste_percentage.toFixed(2)}%)
+                        </span>
+                        </div>
+                      </div>
+                      
+                      {/* Visual cutting diagram - Simple bar with segments and cut lines */}
+                      <div className="mb-4 mt-4">
+                        {/* Container with padding for labels */}
+                        <div className="relative">
+                          {/* Stock bar visualization - boundary-based cut lines */}
+                          {/* Container with border matching the SVG border style */}
+                          <div className="relative bg-white rounded mb-3 border border-gray-300" style={{ height: '60px', overflow: 'hidden' }}>
+                            {/* Text labels rendered as absolute positioned divs to prevent SVG scaling */}
+                            {/* Labels are rendered inside the SVG function to access partPositions */}
+                            <svg key={`svg-${profileIdx}-${patternIdx}`} className="absolute inset-0 w-full h-full" viewBox="0 0 1000 60" preserveAspectRatio="none" shapeRendering="crispEdges">
+                              <defs>
+                                <clipPath id={`clip-${profileIdx}-${patternIdx}`}>
+                                  <rect x="0" y="0" width="1000" height="60" />
+                                </clipPath>
+                              </defs>
+                              {/* Stock bar border will be drawn after calculating actual dimensions */}
+                              {(() => {
+                                try {
+                                  // Safety check: ensure pattern has required data
+                                  if (!pattern || !pattern.parts || !Array.isArray(pattern.parts) || pattern.parts.length === 0) {
+                                    return (
+                                      <text x="500" y="30" fill="#666" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+                                        No parts data available
+                                      </text>
+                                    )
+                                  }
+                                  
+                                  if (!pattern.stock_length || pattern.stock_length <= 0) {
+                                    return (
+                                      <text x="500" y="30" fill="#666" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+                                        Invalid stock length
+                                      </text>
+                                    )
+                                  }
+                                const barHeight = 60
+                                const totalWidth = 1000
+                                const stockLengthMm = pattern.stock_length
+                                const pxPerMm = totalWidth / stockLengthMm
+                                const ANGLE_MATCH_TOL = 2.0 // Tolerance for matching angles (degrees) - used in boundary resolution
+                                const allowTwoSlopes = true // Allow parts to have 2 sloped ends
+                                const markerInset = 8 // Inset from part edge for end markers (px)
+                                const markerDiagonalOffset = 12 // Constant offset for diagonal markers (px)
+                                
+                                // A) Helper: Parse angle robustly
+                                const parseAngle = (value: any): number | null => {
+                                  if (value === null || value === undefined) return null
+                                  if (typeof value === 'number') {
+                                    return Number.isFinite(value) ? value : null
+                                  }
+                                  if (typeof value === 'string') {
+                                    // Extract first signed float from string (handles "Start: +8.7°" format)
+                                    const match = value.match(/-?\d+(\.\d+)?/)
+                                    if (match) {
+                                      const n = parseFloat(match[0])
+                                      return Number.isFinite(n) ? n : null
+                                    }
+                                    return null
+                                  }
+                                  return null
+                                }
+                                
+                                // Robust angle convention detection and deviation calculation
+                                const MIN_DEV_DEG = 1.0 // Minimum deviation to consider a miter
+                                const NEAR_STRAIGHT_THRESHOLD = 0.5 // Force straight if deviation < this
+                                const TWO_SLOPE_SANITY_THRESHOLD = 2.0 // If both slope, treat smaller one as straight if < this
+                                
+                                interface AngleAnalysis {
+                                  rawAngle: number | null
+                                  convention: 'ABS' | 'DEV' | null
+                                  deviation: number | null
+                                  isSlope: boolean
+                                }
+                                
+                                // Analyze angle: detect convention and compute deviation
+                                const analyzeAngle = (rawAngle: number | null): AngleAnalysis => {
+                                  if (rawAngle === null) {
+                                    return { rawAngle: null, convention: null, deviation: null, isSlope: false }
+                                  }
+                                  
+                                  const absAngle = Math.abs(rawAngle)
+                                  
+                                  // Detect convention: if angle is between 60-120, treat as ABS (90° = straight)
+                                  // Otherwise treat as DEV (0° = straight)
+                                  let convention: 'ABS' | 'DEV'
+                                  let deviation: number
+                                  
+                                  if (absAngle >= 60 && absAngle <= 120) {
+                                    // ABSOLUTE convention: 90° = straight
+                                    convention = 'ABS'
+                                    deviation = Math.abs(rawAngle - 90)
+                                  } else {
+                                    // DEVIATION convention: 0° = straight
+                                    convention = 'DEV'
+                                    deviation = absAngle
+                                  }
+                                  
+                                  // Near-straight guard: force straight if very close
+                                  let isSlope = false
+                                  if (convention === 'ABS' && deviation < NEAR_STRAIGHT_THRESHOLD) {
+                                    isSlope = false // Force straight
+                                  } else if (convention === 'DEV' && deviation < NEAR_STRAIGHT_THRESHOLD) {
+                                    isSlope = false // Force straight
+                                  } else {
+                                    // Normal threshold check
+                                    isSlope = deviation >= MIN_DEV_DEG
+                                  }
+                                  
+                                  return { rawAngle, convention, deviation, isSlope }
+                                }
+                                
+                                // A) Layout: Compute x positions by cumulative sum of part.length
+                                // Sort parts by length (longest first) for cutting order visualization
+                                const sortedParts = [...pattern.parts].sort((a, b) => {
+                                  const lengthA = a.length || 0
+                                  const lengthB = b.length || 0
+                                  return lengthB - lengthA // Descending order (longest first)
+                                })
+                                
+                                // Parts are flush (no gaps) in manufacturing mode
+                                let cumulativeX = 0
+                                const partPositions = sortedParts.map((part, partIdx) => {
+                                  const lengthMm = part.length || 0
+                                  const xStart = cumulativeX
+                                  const xEnd = cumulativeX + (lengthMm * pxPerMm)
+                                  cumulativeX = xEnd
+                                  return { part, xStart, xEnd, lengthMm }
+                                })
+                                
+                                const numParts = partPositions.length
+                                const lastPartIdx = numParts - 1
+                                // Calculate exact used length from actual part positions (more accurate)
+                                const usedLengthMm = partPositions.length > 0 
+                                  ? partPositions[lastPartIdx].xEnd / pxPerMm 
+                                  : 0
+                                
+                                // DEBUG: Log overall pattern calculation
+                                console.log(`[NESTING_DEBUG] Pattern ${patternIdx} overall calculation:`, {
+                                  stockLengthMm: pattern.stock_length,
+                                  totalWidth: 1000,
+                                  pxPerMm,
+                                  numParts,
+                                  lastPartIdx,
+                                  lastPartXEnd_raw: partPositions.length > 0 ? partPositions[lastPartIdx].xEnd : 0,
+                                  usedLengthMm,
+                                  usedLengthPx: usedLengthMm * pxPerMm,
+                                  waste_mm: pattern.waste,
+                                  cumulativeX_final: partPositions.length > 0 ? partPositions[lastPartIdx].xEnd : 0,
+                                  firstPartXStart: partPositions.length > 0 ? partPositions[0].xStart : 0
+                                })
+                                
+                                // Create mapping from part name to its number in the cutting list table
+                                const partNameToNumber = new Map<string, number>()
+                                try {
+                                  const partGroups = new Map<string, { name: string, length: number, count: number }>()
+                                  
+                                  pattern.parts.forEach((part) => {
+                                    try {
+                                      const partData = part?.part || {}
+                                      const partName = partData.reference || partData.element_name || 'Unknown'
+                                      const partLength = part?.length || 0
+                                      
+                                      if (partGroups.has(partName)) {
+                                        const existing = partGroups.get(partName)!
+                                        existing.count += 1
+                                      } else {
+                                        partGroups.set(partName, {
+                                          name: partName,
+                                          length: partLength,
+                                          count: 1
+                                        })
+                                      }
+                                    } catch (e) {
+                                      // Ignore individual part errors
+                                    }
+                                  })
+                                  
+                                  // Convert to array and sort by length (longest first, same as cutting list table)
+                                  const sortedGroups = Array.from(partGroups.values()).sort((a, b) => {
+                                    // Sort by length descending (longest first)
+                                    return b.length - a.length
+                                  })
+                                  
+                                  // Create mapping: part name -> table number (1-indexed)
+                                  sortedGroups.forEach((group, idx) => {
+                                    partNameToNumber.set(group.name, idx + 1)
+                                  })
+                                } catch (e) {
+                                  // If mapping fails, labels will fall back to part names
+                                }
+                                
+                                // B) Define "ends" per part (normalize inputs with deviation)
+                                interface PartEnd {
+                                  type: 'straight' | 'miter'
+                                  rawAngle: number | null
+                                  deviation: number | null
+                                }
+                                
+                                const partEnds = partPositions.map(({ part }, partIdx) => {
+                                  try {
+                                    if (!part) {
+                                      throw new Error(`Part at index ${partIdx} is undefined`)
+                                    }
+                                    
+                                  const slopeInfo = (part as any).slope_info || {}
+                                  
+                                  // Parse raw angles (for display purposes)
+                                  const startRawAngle = parseAngle(slopeInfo.start_angle)
+                                  const endRawAngle = parseAngle(slopeInfo.end_angle)
+                                  
+                                  // Use backend's has_slope flags if available (more reliable than recalculating)
+                                  // Only recalculate from angles if flags are not provided (for backwards compatibility)
+                                  const hasBackendFlags = slopeInfo.start_has_slope !== undefined || slopeInfo.end_has_slope !== undefined
+                                  
+                                  let startIsSlope: boolean
+                                  let endIsSlope: boolean
+                                  let startDeviation: number | null = null
+                                  let endDeviation: number | null = null
+                                  
+                                  if (hasBackendFlags) {
+                                    // Trust the backend's determination
+                                    startIsSlope = slopeInfo.start_has_slope === true
+                                    endIsSlope = slopeInfo.end_has_slope === true
+                                    
+                                    // If backend says no slope, set deviation to 0 (not calculated from angles)
+                                    // This ensures boundary rendering respects the backend's decision
+                                    if (startIsSlope) {
+                                      // Only calculate deviation if backend says it's a slope
+                                      if (startRawAngle !== null) {
+                                        const startAnalysis = analyzeAngle(startRawAngle)
+                                        startDeviation = startAnalysis.deviation
+                                      }
+                                    } else {
+                                      // Backend says no slope - set deviation to 0
+                                      startDeviation = 0
+                                    }
+                                    
+                                    if (endIsSlope) {
+                                      // Only calculate deviation if backend says it's a slope
+                                      if (endRawAngle !== null) {
+                                        const endAnalysis = analyzeAngle(endRawAngle)
+                                        endDeviation = endAnalysis.deviation
+                                      }
+                                    } else {
+                                      // Backend says no slope - set deviation to 0
+                                      endDeviation = 0
+                                    }
+                                  } else {
+                                    // Fallback: recalculate from angles (for backwards compatibility)
+                                    const startAnalysis = analyzeAngle(startRawAngle)
+                                    const endAnalysis = analyzeAngle(endRawAngle)
+                                    
+                                    startIsSlope = startAnalysis.isSlope
+                                    endIsSlope = endAnalysis.isSlope
+                                    startDeviation = startAnalysis.deviation
+                                    endDeviation = endAnalysis.deviation
+                                    
+                                    // Sanity fallback: if both ends are slope AND one is tiny, treat tiny one as straight
+                                    if (startIsSlope && endIsSlope) {
+                                      const startDev = startAnalysis.deviation || 0
+                                      const endDev = endAnalysis.deviation || 0
+                                      const minDev = Math.min(startDev, endDev)
+                                      
+                                      if (minDev < TWO_SLOPE_SANITY_THRESHOLD) {
+                                        if (startDev < endDev) {
+                                          startIsSlope = false
+                                        } else {
+                                          endIsSlope = false
+                                        }
+                                      }
+                                    }
+                                  }
+                                  
+                                  const startCut: PartEnd = {
+                                    type: startIsSlope ? 'miter' : 'straight',
+                                    rawAngle: startRawAngle,
+                                    deviation: startDeviation
+                                  }
+                                  
+                                  const endCut: PartEnd = {
+                                    type: endIsSlope ? 'miter' : 'straight',
+                                    rawAngle: endRawAngle,
+                                    deviation: endDeviation
+                                  }
+                                  
+                                    // Debug logging for all parts
+                                  const partName = part.part.reference || part.part.element_name || part.part.product_id || `b${partIdx + 1}`
+                                    try {
+                                      const startDevStr = startDeviation !== null ? startDeviation.toFixed(2) : 'null'
+                                      const endDevStr = endDeviation !== null ? endDeviation.toFixed(2) : 'null'
+                                      const backendFlag = hasBackendFlags ? `(backend: start=${slopeInfo.start_has_slope}, end=${slopeInfo.end_has_slope})` : '(recalculated)'
+                                      console.log(`[ENDCLASS] id=${partName} startRaw=${startRawAngle} startDev=${startDevStr} startType=${startCut.type} endRaw=${endRawAngle} endDev=${endDevStr} endType=${endCut.type} ${backendFlag}`)
+                                    } catch (e) {
+                                      // Silently ignore logging errors
+                                  }
+                                  
+                                  return { startCut, endCut }
+                                  } catch (error) {
+                                    // Fallback: return straight ends if there's any error
+                                    console.error(`[ENDCLASS] Error processing part ${partIdx}:`, error)
+                                    return {
+                                      startCut: { type: 'straight' as const, rawAngle: null, deviation: null },
+                                      endCut: { type: 'straight' as const, rawAngle: null, deviation: null }
+                                    }
+                                  }
+                                })
+                                
+                                // D) Enforce per-part "slope budget" (if allowTwoSlopes is false)
+                                // Note: We already normalized using deviation, so this is just for the allowTwoSlopes flag
+                                const finalPartEnds = allowTwoSlopes 
+                                  ? partEnds 
+                                  : partEnds.map((ends) => {
+                                      const { startCut, endCut } = ends
+                                      const startMiter = startCut.type === 'miter'
+                                      const endMiter = endCut.type === 'miter'
+                                      
+                                      if (startMiter && endMiter) {
+                                        // Keep only the stronger slope (using deviation)
+                                        const startDev = startCut.deviation || 0
+                                        const endDev = endCut.deviation || 0
+                                        
+                                        if (startDev > endDev) {
+                                          return { startCut, endCut: { type: 'straight', rawAngle: null, deviation: null } }
+                                        } else {
+                                          return { startCut: { type: 'straight', rawAngle: null, deviation: null }, endCut }
+                                        }
+                                      }
+                                      
+                                      return { startCut, endCut }
+                                    })
+                                
+                                // C) Build boundary requests correctly (using deviation-normalized ends)
+                                interface SlopeRequest {
+                                  partIdx: number
+                                  side: 'start' | 'end'
+                                  rawAngle: number | null
+                                  deviation: number | null
+                                  owner: 'left' | 'right'
+                                }
+                                
+                                interface Boundary {
+                                  x: number
+                                  isB0: boolean
+                                  isBN: boolean
+                                  requests: SlopeRequest[]
+                                }
+                                
+                                const boundaries: Boundary[] = []
+                                
+                                // B0: boundary at x=0 (bar start)
+                                if (numParts > 0) {
+                                  const requests: SlopeRequest[] = []
+                                  const firstPartEnd = finalPartEnds[0]
+                                  if (firstPartEnd.startCut.type === 'miter') {
+                                    requests.push({
+                                      partIdx: 0,
+                                      side: 'start',
+                                      rawAngle: firstPartEnd.startCut.rawAngle,
+                                      deviation: firstPartEnd.startCut.deviation,
+                                      owner: 'right'
+                                    })
+                                  }
+                                  boundaries.push({
+                                    x: 0,
+                                    isB0: true,
+                                    isBN: false,
+                                    requests
+                                  })
+                                }
+                                
+                                // Internal boundaries Bi (1..N-1): between part i-1 and i
+                                for (let i = 1; i < numParts; i++) {
+                                  const leftIdx = i - 1
+                                  const rightIdx = i
+                                  const requests: SlopeRequest[] = []
+                                  
+                                  // Left part requests slope on its END only if endMiter
+                                  const leftPartEnd = finalPartEnds[leftIdx]
+                                  if (leftPartEnd.endCut.type === 'miter') {
+                                    requests.push({
+                                      partIdx: leftIdx,
+                                      side: 'end',
+                                      rawAngle: leftPartEnd.endCut.rawAngle,
+                                      deviation: leftPartEnd.endCut.deviation,
+                                      owner: 'left'
+                                    })
+                                  }
+                                  
+                                  // Right part requests slope on its START only if startMiter
+                                  const rightPartEnd = finalPartEnds[rightIdx]
+                                  if (rightPartEnd.startCut.type === 'miter') {
+                                    requests.push({
+                                      partIdx: rightIdx,
+                                      side: 'start',
+                                      rawAngle: rightPartEnd.startCut.rawAngle,
+                                      deviation: rightPartEnd.startCut.deviation,
+                                      owner: 'right'
+                                    })
+                                  }
+                                  
+                                  // Also add requests for straight ends - both parts contribute to shared straight boundaries
+                                  // This ensures we can detect shared straight boundaries
+                                  if (leftPartEnd.endCut.type === 'straight' && rightPartEnd.startCut.type === 'straight') {
+                                    // Both straight - this is a shared boundary, but we don't need to add requests
+                                    // The absence of miter requests already indicates both are straight
+                                  }
+                                  
+                                  boundaries.push({
+                                    x: partPositions[i].xStart,
+                                    isB0: false,
+                                    isBN: false,
+                                    requests
+                                  })
+                                }
+                                
+                                // BN: boundary at bar end (before waste)
+                                if (numParts > 0) {
+                                  const requests: SlopeRequest[] = []
+                                  const lastPartEnd = finalPartEnds[lastPartIdx]
+                                  if (lastPartEnd.endCut.type === 'miter') {
+                                    requests.push({
+                                      partIdx: lastPartIdx,
+                                      side: 'end',
+                                      rawAngle: lastPartEnd.endCut.rawAngle,
+                                      deviation: lastPartEnd.endCut.deviation,
+                                      owner: 'left'
+                                    })
+                                  }
+                                  boundaries.push({
+                                    x: partPositions[lastPartIdx].xEnd,
+                                    isB0: false,
+                                    isBN: true,
+                                    requests
+                                  })
+                                }
+                                
+                                // E) Resolve each boundary to exactly ONE cut line (using deviation)
+                                interface ResolvedBoundary {
+                                  x: number
+                                  lineType: 'straight' | 'sloped'
+                                  ownerSide: 'left' | 'right' | null
+                                  rawAngle: number | null
+                                  deviation: number | null
+                                }
+                                
+                                const resolveBoundary = (boundary: Boundary): ResolvedBoundary => {
+                                  const xSnapped = Math.round(boundary.x)
+                                  
+                                  // If no requests → STRAIGHT
+                                  if (boundary.requests.length === 0) {
+                                    return { x: xSnapped, lineType: 'straight', ownerSide: null, rawAngle: null, deviation: null }
+                                  }
+                                  
+                                  // If 1 request → SLOPED owned by that request
+                                  if (boundary.requests.length === 1) {
+                                    const req = boundary.requests[0]
+                                    return { x: xSnapped, lineType: 'sloped', ownerSide: req.owner, rawAngle: req.rawAngle, deviation: req.deviation }
+                                  }
+                                  
+                                  // If 2 requests → decide if they represent the SAME shared miter cut
+                                  const [reqLeft, reqRight] = boundary.requests
+                                  const devLeft = reqLeft.deviation || 0
+                                  const devRight = reqRight.deviation || 0
+                                  const devDiff = Math.abs(devLeft - devRight)
+                                  
+                                  if (devDiff <= ANGLE_MATCH_TOL) {
+                                    // Treat as SHARED → draw ONE diagonal (prefer LEFT)
+                                    return { x: xSnapped, lineType: 'sloped', ownerSide: 'left', rawAngle: reqLeft.rawAngle, deviation: devLeft }
+                                  } else {
+                                    // Choose the larger deviation (more sloped)
+                                    if (devLeft > devRight) {
+                                      return { x: xSnapped, lineType: 'sloped', ownerSide: 'left', rawAngle: reqLeft.rawAngle, deviation: devLeft }
+                                    } else if (devRight > devLeft) {
+                                      return { x: xSnapped, lineType: 'sloped', ownerSide: 'right', rawAngle: reqRight.rawAngle, deviation: devRight }
+                                    } else {
+                                      // Tie: prefer LEFT (deterministic)
+                                      return { x: xSnapped, lineType: 'sloped', ownerSide: 'left', rawAngle: reqLeft.rawAngle, deviation: devLeft }
+                                    }
+                                  }
+                                }
+                                
+                                const resolvedBoundaries = boundaries.map(resolveBoundary)
+                                
+                                // De-duplicate boundaries at same x (keep SLOPED over STRAIGHT)
+                                const boundaryMap = new Map<number, ResolvedBoundary>()
+                                resolvedBoundaries.forEach(boundary => {
+                                  const existing = boundaryMap.get(boundary.x)
+                                  if (!existing || (existing.lineType === 'straight' && boundary.lineType === 'sloped')) {
+                                    boundaryMap.set(boundary.x, boundary)
+                                  }
+                                })
+                                
+                                // Optimize part orientations for minimum waste visualization
+                                // Determine which parts should be flipped to:
+                                // 1. Start with straight cut if possible
+                                // 2. Maximize shared boundaries between adjacent parts
+                                const partFlipStates: boolean[] = new Array(numParts).fill(false)
+                                
+                                // Step 1: Optimize first part - always start with straight if possible
+                                  if (numParts > 0) {
+                                    const firstPart = finalPartEnds[0]
+                                    if (firstPart) {
+                                      // If first part has a straight end, flip it so straight is at position 0
+                                      if (firstPart.endCut.type === 'straight' && firstPart.startCut.type === 'miter') {
+                                        partFlipStates[0] = true
+                                      }
+                                    }
+                                  }
+                                  
+                                  // Step 2: For each subsequent part, check if flipping would create a shared boundary
+                                  for (let i = 1; i < numParts; i++) {
+                                    const prevPart = finalPartEnds[i - 1]
+                                    const currPart = finalPartEnds[i]
+                                    
+                                    if (!prevPart || !currPart) {
+                                      continue
+                                    }
+                                    
+                                    // Get previous part's end type (after potential flip)
+                                    const prevEndType = partFlipStates[i - 1] ? prevPart.startCut.type : prevPart.endCut.type
+                                    const prevEndDev = partFlipStates[i - 1] ? prevPart.startCut.deviation || 0 : prevPart.endCut.deviation || 0
+                                    
+                                    // Check current part's start type (normal) vs end type (if flipped)
+                                    const currStartTypeNormal = currPart.startCut.type
+                                    const currStartDevNormal = currPart.startCut.deviation || 0
+                                    const currStartTypeFlipped = currPart.endCut.type
+                                    const currStartDevFlipped = currPart.endCut.deviation || 0
+                                    
+                                    // Check which orientation creates a shared boundary
+                                    const NEAR_STRAIGHT_THRESHOLD = 1.0
+                                    let normalIsShared = false
+                                    let flippedIsShared = false
+                                    
+                                    // Check normal orientation
+                                    if (prevEndType === 'straight' && currStartTypeNormal === 'straight') {
+                                      normalIsShared = true
+                                    } else if (prevEndType === 'miter' && currStartTypeNormal === 'miter') {
+                                      const devDiff = Math.abs(prevEndDev - currStartDevNormal)
+                                      normalIsShared = devDiff <= ANGLE_MATCH_TOL
+                                    } else {
+                                      const bothNearStraight = 
+                                        (prevEndDev < NEAR_STRAIGHT_THRESHOLD) && 
+                                        (currStartDevNormal < NEAR_STRAIGHT_THRESHOLD)
+                                      normalIsShared = bothNearStraight || true // Always share mixed types
+                                    }
+                                    
+                                    // Check flipped orientation
+                                    if (prevEndType === 'straight' && currStartTypeFlipped === 'straight') {
+                                      flippedIsShared = true
+                                    } else if (prevEndType === 'miter' && currStartTypeFlipped === 'miter') {
+                                      const devDiff = Math.abs(prevEndDev - currStartDevFlipped)
+                                      flippedIsShared = devDiff <= ANGLE_MATCH_TOL
+                                    } else {
+                                      const bothNearStraight = 
+                                        (prevEndDev < NEAR_STRAIGHT_THRESHOLD) && 
+                                        (currStartDevFlipped < NEAR_STRAIGHT_THRESHOLD)
+                                      flippedIsShared = bothNearStraight || true // Always share mixed types
+                                    }
+                                    
+                                    // Prefer flipped if it creates a better match (both straight or both miter with similar angles)
+                                    // vs mixed types
+                                    const normalIsBetterMatch = (prevEndType === currStartTypeNormal) && normalIsShared
+                                    const flippedIsBetterMatch = (prevEndType === currStartTypeFlipped) && flippedIsShared
+                                    
+                                    if (flippedIsBetterMatch && !normalIsBetterMatch) {
+                                      partFlipStates[i] = true
+                                    }
+                                  }
+                                
+                                // Compute shared boundaries FIRST (before rendering parts)
+                                // This ensures we know which boundaries are shared when rendering individual markers
+                                const sharedBoundarySet = new Set<number>() // Set of boundary x positions that are shared
+                                
+                                for (let i = 0; i < numParts - 1; i++) {
+                                    const leftPartIdx = i
+                                    const rightPartIdx = i + 1
+                                    
+                                    const leftPartEnd = finalPartEnds[leftPartIdx]
+                                    const rightPartEnd = finalPartEnds[rightPartIdx]
+                                    
+                                    if (!leftPartEnd || !rightPartEnd) {
+                                      continue
+                                    }
+                                    
+                                    // Use optimized flip states to get the actual geometry at boundaries
+                                    const leftEndType = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
+                                    const rightStartType = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
+                                    const leftDev = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
+                                    const rightDev = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
+                                    
+                                    const boundaryX = Math.round(partPositions[rightPartIdx].xStart)
+                                    const NEAR_STRAIGHT_THRESHOLD_FOR_SHARING = 1.0
+                                    
+                                    let isShared = false
+                                    if (leftEndType === 'straight' && rightStartType === 'straight') {
+                                      isShared = true
+                                    } else if (leftEndType === 'miter' && rightStartType === 'miter') {
+                                      const devDiff = Math.abs(leftDev - rightDev)
+                                      isShared = devDiff <= ANGLE_MATCH_TOL
+                                    } else {
+                                      const bothNearStraight = 
+                                        (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
+                                        (rightDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING)
+                                      isShared = bothNearStraight || true // Always share mixed types (parts are flush)
+                                    }
+                                    
+                                    if (isShared) {
+                                      sharedBoundarySet.add(boundaryX)
+                                      
+                                      // Debug log for b34, b37, b38 boundaries
+                                      const leftPartName = partPositions[leftPartIdx]?.part?.part?.reference || `b${leftPartIdx + 1}`
+                                      const rightPartName = partPositions[rightPartIdx]?.part?.part?.reference || `b${rightPartIdx + 1}`
+                                      if (leftPartName === 'b34' || leftPartName === 'b37' || leftPartName === 'b38' ||
+                                          rightPartName === 'b34' || rightPartName === 'b37' || rightPartName === 'b38') {
+                                        try {
+                                          console.log(`[SHARED-SET-ADD] ${leftPartName}-${rightPartName}: boundaryX=${boundaryX}, leftEndType=${leftEndType}, rightStartType=${rightStartType}`)
+                                        } catch (e) {
+                                          // Ignore
+                                        }
+                                      }
+                                    }
+                                  }
+                                
+                                return (
+                                  <g clipPath={`url(#clip-${profileIdx}-${patternIdx})`}>
+                                    {/* Stock bar background - white */}
+                                    <rect
+                                      x="0"
+                                      y="0"
+                                      width="1000"
+                                      height="60"
+                                      fill="#ffffff"
+                                    />
+                                    
+                                    {/* Stock bar border is handled by container div border-gray-300 class */}
+                                    {/* Draw each part as its own rectangle - FLUSH with pixel snapping (or with kerf gap in geometry view) */}
+                                    {partPositions.map(({ part, xStart, xEnd }, partIdx) => {
+                                      // Safety check: skip if part or partEndInfo is missing
+                                      if (!part || !finalPartEnds[partIdx]) {
+                                        return null
+                                      }
+                                      
+                                      const partName = part.part?.reference || part.part?.element_name || part.part?.product_id || `b${partIdx + 1}`
+                                      const partEndInfo = finalPartEnds[partIdx]
+                                      
+                                      // Get the part number from the cutting list table mapping
+                                      const partNumber = partNameToNumber.get(partName) || partIdx + 1
+                                      const displayLabel = partNameToNumber.has(partName) ? partNumber.toString() : partName
+                                      
+                                      // ROBUST SOLUTION: Calculate exact boundaries to prevent gaps and overlaps
+                                      
+                                      // Calculate the exact boundary between parts and waste
+                                      // This MUST be the same calculation used for waste start position
+                                      const exactPartsEndPx = partPositions.length > 0 
+                                        ? Math.floor(partPositions[lastPartIdx].xEnd)
+                                        : 0
+                                      
+                                      // DEBUG: Log boundary calculation for first and last parts
+                                      if (partIdx === 0 || partIdx === lastPartIdx) {
+                                        console.log(`[NESTING_DEBUG] Part ${partIdx} (${partName}):`, {
+                                          xStart_raw: xStart,
+                                          xEnd_raw: xEnd,
+                                          exactPartsEndPx,
+                                          usedLengthMm,
+                                          pxPerMm,
+                                          calculatedUsedLengthPx: usedLengthMm * pxPerMm
+                                        })
+                                      }
+                                      
+                                      // First part: start at x=0 to eliminate gap with border
+                                      // Border left line is at x=0.5 with strokeWidth=1, stroke centered
+                                      // Stroke extends from 0 to 1, visible inner edge is at x=1
+                                      // But we start part at x=0 so it overlaps the border stroke slightly, eliminating the gap
+                                      // Other parts: use rounded start position
+                                      const xPx = partIdx === 0 ? 0 : Math.floor(xStart)
+                                      
+                                      // Calculate end position
+                                      // CRITICAL: For last part, use the exact boundary (same as waste start)
+                                      // For other parts: use calculated end position
+                                      let endPx: number
+                                      if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                        // Use the exact boundary - this MUST match waste start calculation
+                                        endPx = exactPartsEndPx
+                                        console.log(`[NESTING_DEBUG] Last part ${partIdx} (${partName}):`, {
+                                          xPx,
+                                          xEnd_raw: xEnd,
+                                          exactPartsEndPx,
+                                          endPx,
+                                          waste: pattern.waste
+                                        })
+                                      } else {
+                                        endPx = Math.floor(xEnd)
+                                      }
+                                      
+                                      // Calculate width as integer pixels
+                                      let wPx = endPx - xPx
+                                      
+                                      // CRITICAL: For last part, strictly enforce the boundary
+                                      // The width MUST NOT exceed the exact boundary
+                                      if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                        // Calculate the maximum allowed width - use exact boundary
+                                        const maxAllowedWidth = exactPartsEndPx - xPx
+                                        // STRICT: Use the exact boundary width, not the calculated wPx
+                                        // This ensures the part cannot extend beyond the boundary
+                                        wPx = Math.floor(maxAllowedWidth)
+                                        console.log(`[NESTING_DEBUG] Last part width enforcement:`, {
+                                          calculatedWPx: endPx - xPx,
+                                          maxAllowedWidth,
+                                          finalWPx: wPx,
+                                          xPx,
+                                          endPx,
+                                          exactPartsEndPx,
+                                          partWillEndAt: xPx + wPx,
+                                          shouldMatchWasteStart: exactPartsEndPx,
+                                          clipPathWidth: exactPartsEndPx - xPx
+                                        })
+                                      } else {
+                                        // For other parts, just ensure integer
+                                        wPx = Math.floor(wPx)
+                                      }
+                                      
+                                      // Ensure minimum width of 1px
+                                      wPx = Math.max(1, wPx)
+                                      
+                                      // DEBUG: Log first and last part final positions
+                                      if (partIdx === 0) {
+                                        console.log(`[NESTING_DEBUG] First part ${partIdx} (${partName}) FINAL:`, {
+                                          xPx,
+                                          endPx,
+                                          wPx,
+                                          xStart_raw: xStart,
+                                          xEnd_raw: xEnd,
+                                          partEndsAt: xPx + wPx
+                                        })
+                                      }
+                                      if (partIdx === lastPartIdx) {
+                                        console.log(`[NESTING_DEBUG] Last part ${partIdx} (${partName}) FINAL:`, {
+                                          xPx,
+                                          endPx,
+                                          wPx,
+                                          exactPartsEndPx,
+                                          partEndsAt: xPx + wPx,
+                                          shouldMatchWasteStart: exactPartsEndPx
+                                        })
+                                      }
+                                      
+                                      // Check if this part's boundaries are shared using the precomputed set
+                                      let startIsShared = false
+                                      let endIsShared = false
+                                      
+                                      // Debug log for b34, b37, b38
+                                      const shouldDebugPart = partName === 'b34' || partName === 'b37' || partName === 'b38'
+                                      
+                                      // Check start boundary (shared with previous part)
+                                      if (partIdx > 0) {
+                                        const boundaryX = Math.round(xStart)
+                                        startIsShared = sharedBoundarySet.has(boundaryX)
+                                      }
+                                      
+                                      // Check end boundary (shared with next part)
+                                      if (partIdx < numParts - 1) {
+                                        const boundaryX = Math.round(partPositions[partIdx + 1].xStart)
+                                        endIsShared = sharedBoundarySet.has(boundaryX)
+                                      } else if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                        // Last part with waste - always show end boundary (it's not shared with another part)
+                                        endIsShared = false
+                                      }
+                                      
+                                      // Debug log for b34, b37, b38
+                                      if (shouldDebugPart) {
+                                        try {
+                                          const startBoundaryX = partIdx > 0 ? Math.round(xStart) : null
+                                          const endBoundaryX = partIdx < numParts - 1 ? Math.round(partPositions[partIdx + 1].xStart) : null
+                                          const startInSet = startBoundaryX !== null ? sharedBoundarySet.has(startBoundaryX) : null
+                                          const endInSet = endBoundaryX !== null ? sharedBoundarySet.has(endBoundaryX) : null
+                                          
+                                          console.log(`[PART-MARKERS] ${partName}: startBoundaryX=${startBoundaryX} startInSet=${startInSet} startIsShared=${startIsShared} willShowStart=${!startIsShared} | endBoundaryX=${endBoundaryX} endInSet=${endInSet} endIsShared=${endIsShared} willShowEnd=${!endIsShared}`)
+                                        } catch (e) {
+                                          // Ignore
+                                        }
+                                      }
+                                      
+                                      // Hide label if rectangle too small (min width threshold)
+                                      const minLabelWidth = 30
+                                      const showLabel = wPx >= minLabelWidth
+                                      
+                                      // Only create clip path for the last part to prevent overflow into waste
+                                      const isLastPart = partIdx === lastPartIdx && pattern.waste > 0
+                                      const partClipId = isLastPart ? `part-clip-${profileIdx}-${patternIdx}-${partIdx}` : null
+                                      
+                                      return (
+                                        <g key={partIdx}>
+                                          {/* Define clip path ONLY for last part */}
+                                          {isLastPart && (
+                                          <defs>
+                                              <clipPath id={partClipId!}>
+                                                {/* For last part, use exact boundary to prevent ANY overflow into waste */}
+                                                {/* CRITICAL: Use exact boundary calculation directly, not wPx, to ensure strict clipping */}
+                                          <rect
+                                            x={xPx}
+                                            y="0"
+                                                  width={exactPartsEndPx - xPx + 1}  // Add 1px to ensure polygon fills completely
+                                            height={barHeight}
+                                                />
+                                              </clipPath>
+                                            </defs>
+                                          )}
+                                          
+                                          {/* Part shape matching actual cut geometry - polygon with angled ends */}
+                                          {/* All coordinates are already integers, ensuring pixel-perfect rendering */}
+                                          {/* CRITICAL: Only use clipPath for last part to prevent overflow */}
+                                          {/* Calculate polygon boundaries once and reuse for both polygon and markers */}
+                                          {(() => {
+                                            // Get cut types for this part (considering flip state)
+                                            const isFlipped = partFlipStates[partIdx]
+                                            const startType = isFlipped ? partEndInfo.endCut.type : partEndInfo.startCut.type
+                                            const endType = isFlipped ? partEndInfo.startCut.type : partEndInfo.endCut.type
+                                            
+                                            // Use same constants as marker lines
+                                            const markerInset = 8
+                                            const markerDiagonalOffset = 12
+                                            
+                                            // CRITICAL: The marker lines show the correct boundaries (vertical lines at cut positions)
+                                            // The polygon must be clipped to these vertical marker line positions
+                                            // For sloped parts, the polygon should NOT extend beyond the vertical marker lines
+                                            
+                                            // Calculate the vertical marker line positions (where the actual cuts are)
+                                            // These are the boundaries that the polygon must respect
+                                            let markerLeftX: number
+                                            let markerRightX: number
+                                            
+                                            // Start boundary (left side) - get the vertical marker line position
+                                            if (partIdx === 0) {
+                                              // First part: marker is at x=0
+                                              markerLeftX = xPx
+                                            } else if (startIsShared) {
+                                              // Shared boundary: marker is at the boundary position
+                                              markerLeftX = xPx
+                                            } else {
+                                              // Non-shared boundary: marker is at xPx + markerInset for straight, or at the vertical position for miter
+                                              // For miter cuts, the marker line is still vertical at the boundary position
+                                              // The diagonal line shows the slope, but the boundary is vertical
+                                              markerLeftX = startType === 'straight' ? xPx + markerInset : xPx
+                                            }
+                                            
+                                            // End boundary (right side) - get the vertical marker line position
+                                            if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                              // Last part: marker is at exactPartsEndPx
+                                              markerRightX = exactPartsEndPx
+                                            } else if (partIdx === lastPartIdx && pattern.waste === 0) {
+                                              // Last part with 0 waste: marker is at end of stockbar
+                                              markerRightX = 1000
+                                            } else if (endIsShared) {
+                                              // Shared boundary: marker is at the boundary position
+                                              markerRightX = endPx
+                                            } else {
+                                              // Non-shared boundary: marker is at endPx - markerInset for straight, or at the vertical position for miter
+                                              markerRightX = endType === 'straight' ? endPx - markerInset : endPx
+                                            }
+                                            
+                                            // FIX: Polygon should fill the ENTIRE part width, not be inset like marker lines
+                                            // Use xPx and endPx directly for the polygon, not markerLeftX/markerRightX
+                                            // The marker lines will be inset, but the gray background should fill the full part
+                                            // CRITICAL: For last part, extend to full width (1000 for 0 waste, or exactPartsEndPx+1 for waste > 0)
+                                            const polyLeftX = xPx + 0.5
+                                            const polyRightX = (partIdx === lastPartIdx && pattern.waste > 0) 
+                                              ? exactPartsEndPx + 1  // Extend to exactPartsEndPx + 1 to fill gap before waste
+                                              : (partIdx === lastPartIdx && pattern.waste === 0)
+                                              ? 1000  // Last part with 0 waste: extend to full stock bar width
+                                              : endPx + 0.5  // Use endPx for other parts
+                                            
+                                            // Create polygon as a rectangle: top-left, top-right, bottom-right, bottom-left
+                                            // All edges are vertical, filling the entire part width
+                                            const points = `${polyLeftX},0.5 ${polyRightX},0.5 ${polyRightX},${barHeight - 0.5} ${polyLeftX},${barHeight - 0.5}`
+                                            
+                                            // Debug logging for polygon calculation (especially for part 2)
+                                            if (partIdx === 1 || partName === 'b32') {
+                                              console.log(`[POLYGON-DEBUG] Part ${partIdx} (${partName}):`, {
+                                                startType,
+                                                endType,
+                                                startIsShared,
+                                                endIsShared,
+                                                isFlipped,
+                                                xPx,
+                                                endPx,
+                                                markerLeftX,
+                                                markerRightX,
+                                                polyLeftX,
+                                                polyRightX,
+                                                points
+                                              })
+                                            }
+                                            
+                                            // Calculate center X for part label - use actual polygon boundaries
+                                            // Center between left and right (the actual visible boundaries)
+                                            const centerX = (polyLeftX + polyRightX) / 2
+                                            
+                                            return (
+                                              <>
+                                                {/* Gray background polygon - vertices match marker line positions exactly */}
+                                                <g clipPath={isLastPart ? `url(#${partClipId!})` : undefined}>
+                                                  <polygon
+                                                    points={points}
+                                                    fill="#f3f4f6"
+                                                    stroke="none"
+                                                    shapeRendering="crispEdges"
+                                                  />
+                                                </g>
+                                                
+                                                {/* Per-part end markers - vertical lines at the boundary positions */}
+                                                {/* Only show markers for non-shared boundaries */}
+                                                {/* Shared boundaries will be drawn separately after all parts */}
+                                                {/* Marker lines are always vertical, matching the polygon boundaries */}
+                                                <g clipPath={isLastPart ? `url(#${partClipId!})` : undefined}>
+                                                  {/* Start cut marker - only if NOT shared */}
+                                                  {!startIsShared && (
+                                                    <line
+                                                      x1={polyLeftX}
+                                                      y1="0.5"
+                                                      x2={polyLeftX}
+                                                      y2={barHeight - 0.5}
+                                                      stroke="#d1d5db"
+                                                      strokeWidth="1"
+                                                      strokeLinecap="butt"
+                                                      shapeRendering="crispEdges"
+                                                    />
+                                                  )}
+                                                  
+                                                  {/* End cut marker - for non-last parts or last part with waste */}
+                                                  {(() => {
+                                                    const isLastPartWithWaste = partIdx === lastPartIdx && pattern.waste > 0
+                                                    const shouldShowMarker = !endIsShared || isLastPartWithWaste
+                                                    
+                                                    if (!shouldShowMarker) return null
+                                                    
+                                                    // For last part with straight cut, don't draw here (will be drawn outside clipPath)
+                                                    if (isLastPartWithWaste && endType === 'straight') {
+                                                      return null
+                                                    }
+                                                    
+                                                    return (
+                                                      <line
+                                                        x1={polyRightX}
+                                                        y1="0.5"
+                                                        x2={polyRightX}
+                                                        y2={barHeight - 0.5}
+                                                        stroke="#d1d5db"
+                                                        strokeWidth="1"
+                                                        strokeLinecap="butt"
+                                                        shapeRendering="crispEdges"
+                                                      />
+                                                    )
+                                                  })()}
+                                                </g>
+                                                
+                                                {/* Part labels are now rendered as absolute positioned divs outside SVG */}
+                                              </>
+                                            )
+                                          })()}
+                                          
+                                          {/* End boundary line for last part with straight cut - draw outside clipPath to ensure visibility */}
+                                          {/* Only draw for straight cuts - miter cuts already have their diagonal line */}
+                                          {/* Match exact style of shared boundary lines */}
+                                          {isLastPart && exactPartsEndPx > 0 && (() => {
+                                            // Get endType for the last part
+                                            const isFlipped = partFlipStates[partIdx]
+                                            const endType = isFlipped ? partEndInfo.startCut.type : partEndInfo.endCut.type
+                                            
+                                            // Only draw vertical line for straight cuts
+                                            if (endType === 'straight') {
+                                              // Use exact same pattern as shared boundaries: xSnapped + 0.5
+                                              // exactPartsEndPx is already an integer (Math.floor), so just add 0.5
+                                              return (
+                                                <line
+                                                  key={`last-part-boundary-${partIdx}`}
+                                                  x1={exactPartsEndPx + 0.5}
+                                                  y1="0.5"
+                                                  x2={exactPartsEndPx + 0.5}
+                                                  y2={barHeight - 0.5}
+                                                  stroke="#d1d5db"
+                                                  strokeWidth="1"
+                                                  strokeLinecap="butt"
+                                                  shapeRendering="crispEdges"
+                                                />
+                                              )
+                                            }
+                                            return null
+                                          })()}
+                                        </g>
+                                      )
+                                    })}
+                                    
+                                    {/* Draw shared boundary markers - single marker at shared boundaries */}
+                                    {(() => {
+                                      // Iterate through ALL internal boundaries between parts (not just boundaryMap)
+                                      const sharedBoundaries: Array<{ x: number, leftPartIdx: number, rightPartIdx: number, leftEndType: string, rightStartType: string, leftDev: number, rightDev: number }> = []
+                                      
+                                      for (let i = 0; i < numParts - 1; i++) {
+                                        const leftPartIdx = i
+                                        const rightPartIdx = i + 1
+                                        
+                                        const leftPartEnd = finalPartEnds[leftPartIdx]
+                                        const rightPartEnd = finalPartEnds[rightPartIdx]
+                                        
+                                        if (!leftPartEnd || !rightPartEnd) {
+                                          continue
+                                        }
+                                        
+                                        // Use optimized flip states to get the actual geometry at boundaries
+                                        const leftEndType = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
+                                        const rightStartType = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
+                                        const leftDev = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
+                                        const rightDev = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
+                                        
+                                        // Boundary x position is the start of the right part
+                                        // CRITICAL: Use the EXACT same calculation as the part rectangles to ensure alignment
+                                        // Part rectangles use: xPx = partIdx === 0 ? 0 : Math.floor(xStart)
+                                        // So boundary should use the same logic
+                                        const rightPartXStart = partPositions[rightPartIdx].xStart
+                                        const boundaryX = rightPartIdx === 0 ? 0 : Math.floor(rightPartXStart)
+                                        
+                                        // Debug log for ALL boundaries involving b34, b37, b38 (before checking if shared)
+                                        const leftPartName = partPositions[leftPartIdx]?.part?.part?.reference || `b${leftPartIdx + 1}`
+                                        const rightPartName = partPositions[rightPartIdx]?.part?.part?.reference || `b${rightPartIdx + 1}`
+                                        
+                                        // Log all boundaries for debugging (only for b34, b37, b38)
+                                        const shouldLog = leftPartName === 'b34' || leftPartName === 'b37' || leftPartName === 'b38' ||
+                                                         rightPartName === 'b34' || rightPartName === 'b37' || rightPartName === 'b38'
+                                        
+                                        // Check if it's truly shared (both parts have matching types)
+                                        let isShared = false
+                                        
+                                        // Check if shared: both parts must have matching end types
+                                        // OR both are very close to straight (near-straight threshold)
+                                        const NEAR_STRAIGHT_THRESHOLD_FOR_SHARING = 1.0 // More lenient for sharing detection
+                                        
+                                        if (leftEndType === 'straight' && rightStartType === 'straight') {
+                                          // Both straight = shared straight boundary
+                                          isShared = true
+                                        } else if (leftEndType === 'miter' && rightStartType === 'miter') {
+                                          // Both miter = check if complementary
+                                          const devDiff = Math.abs(leftDev - rightDev)
+                                          isShared = devDiff <= ANGLE_MATCH_TOL // Complementary slopes
+                                        } else {
+                                          // Mixed types: share the boundary and show the miter marker (the actual cut geometry)
+                                          // When parts are flush, they share a physical cut, so show a single marker
+                                          // Use the miter geometry since that's what will actually be cut
+                                          const bothNearStraight = 
+                                            (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
+                                            (rightDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING)
+                                          
+                                          if (bothNearStraight) {
+                                            // Both are very close to straight = treat as shared straight boundary
+                                            isShared = true
+                                          } else {
+                                            // One is straight, one is miter - still share the boundary
+                                            // The actual cut will be the miter, so we'll draw that in the rendering
+                                            isShared = true
+                                          }
+                                        }
+                                        
+                                        // Log boundary check (for debugging)
+                                        if (shouldLog) {
+                                          try {
+                                            const minDev = Math.min(leftDev, rightDev)
+                                            const maxDev = Math.max(leftDev, rightDev)
+                                            const bothNearStraight = (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && (rightDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING)
+                                            const lenientCheck = minDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING && maxDev < 10.0
+                                            
+                                            console.log(`[BOUNDARY-CHECK] ${leftPartName}-${rightPartName}:`, {
+                                              boundaryX,
+                                              leftPartIdx,
+                                              rightPartIdx,
+                                              leftEndType,
+                                              rightStartType,
+                                              leftDev: leftDev.toFixed(2),
+                                              rightDev: rightDev.toFixed(2),
+                                              minDev: minDev.toFixed(2),
+                                              maxDev: maxDev.toFixed(2),
+                                              isShared,
+                                              bothNearStraight,
+                                              lenientCheck,
+                                              devDiff: leftEndType === 'miter' && rightStartType === 'miter' ? Math.abs(leftDev - rightDev).toFixed(2) : null,
+                                              ANGLE_MATCH_TOL
+                                            })
+                                          } catch (e) {
+                                            // Ignore logging errors
+                                          }
+                                        }
+                                        
+                                        if (isShared) {
+                                          sharedBoundaries.push({
+                                            x: boundaryX,
+                                            leftPartIdx,
+                                            rightPartIdx,
+                                            leftEndType,
+                                            rightStartType,
+                                            leftDev,
+                                            rightDev
+                                          })
+                                        }
+                                      }
+                                      
+                                      // Render shared boundary markers
+                                      return sharedBoundaries.map((sb, idx) => {
+                                        const xSnapped = sb.x
+                                        
+                                        // Draw shared marker at the exact boundary position (no inset, no gap)
+                                        if (sb.leftEndType === 'straight' && sb.rightStartType === 'straight') {
+                                          // Shared straight boundary
+                                          return (
+                                            <line
+                                              key={`shared-boundary-${idx}`}
+                                              x1={xSnapped + 0.5}
+                                              y1="0.5"
+                                              x2={xSnapped + 0.5}
+                                              y2={barHeight - 0.5}
+                                              stroke="#d1d5db"
+                                              strokeWidth="1"
+                                              strokeLinecap="butt"
+                                              shapeRendering="crispEdges"
+                                            />
+                                          )
+                                        } else if (sb.leftEndType === 'miter' && sb.rightStartType === 'miter') {
+                                          // Shared sloped boundary - determine direction from deviations
+                                          const diagonalOffset = 12
+                                          
+                                          // Find the resolved boundary to get ownerSide
+                                          const resolvedBoundary = boundaryMap.get(xSnapped)
+                                          const ownerSide = resolvedBoundary?.ownerSide || 'left'
+                                          
+                                          let x1, y1, x2, y2
+                                          if (ownerSide === 'left') {
+                                            x1 = xSnapped - diagonalOffset
+                                            y1 = 0
+                                            x2 = xSnapped
+                                            y2 = barHeight
+                                        } else {
+                                            x1 = xSnapped
+                                            y1 = 0
+                                            x2 = xSnapped + diagonalOffset
+                                            y2 = barHeight
+                                          }
+                                          
+                                            return (
+                                              <line
+                                              key={`shared-boundary-${idx}`}
+                                              x1={typeof x1 === 'number' ? x1 + 0.5 : x1}
+                                              y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
+                                              x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
+                                              y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
+                                              stroke="#d1d5db"
+                                              strokeWidth="1"
+                                                strokeLinecap="butt"
+                                              shapeRendering="crispEdges"
+                                            />
+                                          )
+                                        } else {
+                                          // Mixed types: one straight, one miter
+                                          // Show the marker based on which side has the miter (the actual cut geometry)
+                                          const MIN_DEV_DEG = 1.0
+                                          const SIGNIFICANT_MITER_DEG = 8.0
+                                          const diagonalOffset = 12
+                                          
+                                          // Check if left end is miter (after flipping for first part)
+                                          const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev >= SIGNIFICANT_MITER_DEG
+                                          // Check if right start is miter
+                                          const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev >= SIGNIFICANT_MITER_DEG
+                                          
+                                          // Show sloped if either side has a significant miter
+                                          // BUT: if left is straight and right is miter, show straight (unless it's the last boundary)
+                                          if (leftIsMiter) {
+                                            // Left end is miter - show sloped marker
+                                            const resolvedBoundary = boundaryMap.get(xSnapped)
+                                            const ownerSide = resolvedBoundary?.ownerSide || 'left'
+                                            
+                                            let x1, y1, x2, y2
+                                            if (ownerSide === 'left') {
+                                              x1 = xSnapped - diagonalOffset
+                                              y1 = 0
+                                              x2 = xSnapped
+                                              y2 = barHeight
+                                            } else {
+                                              x1 = xSnapped
+                                              y1 = 0
+                                              x2 = xSnapped + diagonalOffset
+                                              y2 = barHeight
+                                            }
+                                            
+                                            return (
+                                              <line
+                                                key={`shared-boundary-${idx}`}
+                                                x1={typeof x1 === 'number' ? x1 + 0.5 : x1}
+                                                y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
+                                                x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
+                                                y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
+                                                stroke="#d1d5db"
+                                                strokeWidth="1"
+                                                strokeLinecap="butt"
+                                                shapeRendering="crispEdges"
+                                              />
+                                            )
+                                          } else if (rightIsMiter && sb.rightPartIdx === numParts - 1) {
+                                            // Right start is miter and it's the last internal boundary - show sloped
+                                            const resolvedBoundary = boundaryMap.get(xSnapped)
+                                            const ownerSide = resolvedBoundary?.ownerSide || 'right'
+                                            
+                                          let x1, y1, x2, y2
+                                            if (ownerSide === 'left') {
+                                            x1 = xSnapped - diagonalOffset
+                                            y1 = 0
+                                            x2 = xSnapped
+                                            y2 = barHeight
+                                          } else {
+                                            x1 = xSnapped
+                                            y1 = 0
+                                            x2 = xSnapped + diagonalOffset
+                                            y2 = barHeight
+                                          }
+                                          
+                                          return (
+                                            <line
+                                                key={`shared-boundary-${idx}`}
+                                                x1={typeof x1 === 'number' ? x1 + 0.5 : x1}
+                                                y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
+                                                x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
+                                                y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
+                                                stroke="#d1d5db"
+                                                strokeWidth="1"
+                                                strokeLinecap="butt"
+                                                shapeRendering="crispEdges"
+                                              />
+                                            )
+                                          } else {
+                                            // Show straight marker (the simpler cut for mixed boundaries)
+                                            return (
+                                              <line
+                                                key={`shared-boundary-${idx}`}
+                                                x1={Math.round(xSnapped) + 0.5}
+                                                y1="0.5"
+                                                x2={Math.round(xSnapped) + 0.5}
+                                                y2={barHeight - 0.5}
+                                                stroke="#d1d5db"
+                                                strokeWidth="1"
+                                                strokeLinecap="butt"
+                                                shapeRendering="crispEdges"
+                                              />
+                                            )
+                                          }
+                                        }
+                                      })
+                                    })()}
+                                    
+                                    {/* Waste section - starts after last part (FLUSH), with boundary line */}
+                                    {pattern.waste > 0 && !(pattern as any).exceeds_stock && partPositions.length > 0 && (() => {
+                                      // CRITICAL: Use the EXACT same boundary calculation as the last part
+                                      // This ensures perfect alignment - no gap, no overlap
+                                      const exactPartsEndPx = Math.floor(partPositions[lastPartIdx].xEnd)
+                                      
+                                      const wasteWidth = (pattern.waste * pxPerMm)
+                                      
+                                      // Use integer pixels for waste area
+                                      const wasteXPx = exactPartsEndPx
+                                      const wasteWPx = Math.floor(wasteWidth)
+                                      
+                                      // Ensure waste doesn't extend beyond stock length
+                                      const maxWasteWidth = 1000 - wasteXPx
+                                      const finalWasteWidth = Math.min(wasteWPx, maxWasteWidth)
+                                      
+                                      // Draw boundary line between last part and waste
+                                      const boundaryX = exactPartsEndPx + 0.5
+                                      
+                                      // DEBUG: Log waste calculation
+                                      console.log(`[NESTING_DEBUG] Waste calculation for pattern ${patternIdx}:`, {
+                                        lastPartIdx,
+                                        lastPartXEnd_raw: partPositions[lastPartIdx].xEnd,
+                                        exactPartsEndPx,
+                                        wasteXPx,
+                                        wasteWidth_raw: wasteWidth,
+                                        wasteWPx,
+                                        finalWasteWidth,
+                                        maxWasteWidth,
+                                        stockLength: 1000,
+                                        waste_mm: pattern.waste,
+                                        pxPerMm,
+                                        shouldMatchLastPartEnd: exactPartsEndPx
+                                      })
+                                      
+                                      // DEBUG: Log waste calculation
+                                      console.log(`[NESTING_DEBUG] Waste calculation:`, {
+                                        lastPartIdx,
+                                        lastPartXEnd_raw: partPositions[lastPartIdx].xEnd,
+                                        exactPartsEndPx,
+                                        wasteXPx,
+                                        wasteWidth_raw: wasteWidth,
+                                        wasteWPx,
+                                        finalWasteWidth,
+                                        maxWasteWidth,
+                                        stockLength: 1000,
+                                        waste_mm: pattern.waste,
+                                        pxPerMm
+                                      })
+                                        
+                                        return (
+                                          <g>
+                                            {/* Waste area rectangle - start after boundary line to prevent overlap */}
+                                            {/* Boundary line is at exactPartsEndPx + 0.5, so waste starts at exactPartsEndPx + 1 */}
+                                          <rect
+                                              x={wasteXPx + 1}
+                                              y={0}
+                                              width={Math.max(0, finalWasteWidth - 1)}
+                                            height={barHeight}
+                                              fill="#ffffff"
+                                            stroke="none"
+                                            shapeRendering="crispEdges"
+                                              style={{ 
+                                                imageRendering: 'pixelated',
+                                                // Force integer pixel rendering
+                                                transform: 'translateZ(0)'
+                                              }}
+                                            />
+                                          </g>
+                                        )
+                                    })()}
+                                  </g>
+                                )
+                                } catch (error) {
+                                  console.error('[NestingReport] Error rendering SVG:', error)
+                                  return (
+                                    <text x="500" y="30" fill="#ff0000" fontSize="12" textAnchor="middle" dominantBaseline="middle">
+                                      Error rendering visualization
+                                    </text>
+                                  )
+                                }
+                              })()}
+                            </svg>
+                            {/* Text labels rendered as absolute positioned divs outside SVG to prevent scaling */}
+                            {(() => {
+                              try {
+                                // Calculate partPositions and partNameToNumber here for label rendering
+                                const stockLengthMm = pattern.stock_length
+                                const totalWidth = 1000
+                                const pxPerMm = totalWidth / stockLengthMm
+                                
+                                // Create mapping from part name to its number in the cutting list table
+                                // Use the EXACT same logic as in the SVG rendering section (lines 668-706)
+                                const partNameToNumber = new Map<string, number>()
+                                try {
+                                  const partGroups = new Map<string, { name: string, length: number, count: number }>()
+                                  
+                                  pattern.parts.forEach((part) => {
+                                    try {
+                                      const partData = part?.part || {}
+                                      const partName = partData.reference || partData.element_name || 'Unknown'
+                                      const partLength = part?.length || 0
+                                      
+                                      if (partGroups.has(partName)) {
+                                        const existing = partGroups.get(partName)!
+                                        existing.count += 1
+                                      } else {
+                                        partGroups.set(partName, {
+                                          name: partName,
+                                          length: partLength,
+                                          count: 1
+                                        })
+                                      }
+                                    } catch (e) {
+                                      // Ignore individual part errors
+                                    }
+                                  })
+                                  
+                                  // Convert to array and sort by length (longest first, same as cutting list table)
+                                  const sortedGroups = Array.from(partGroups.values()).sort((a, b) => {
+                                    // Sort by length descending (longest first)
+                                    return b.length - a.length
+                                  })
+                                  
+                                  // Create mapping: part name -> table number (1-indexed)
+                                  sortedGroups.forEach((group, idx) => {
+                                    partNameToNumber.set(group.name, idx + 1)
+                                  })
+                                } catch (e) {
+                                  // If mapping fails, labels will fall back to part names
+                                }
+                                
+                                // Calculate part positions (same logic as in SVG)
+                                const sortedParts = [...pattern.parts].sort((a, b) => {
+                                  const lengthA = a.length || 0
+                                  const lengthB = b.length || 0
+                                  return lengthB - lengthA // Descending order (longest first)
+                                })
+                                
+                                let cumulativeX = 0
+                                const partPositions = sortedParts.map((part, partIdx) => {
+                                  const lengthMm = part.length || 0
+                                  const xStart = cumulativeX
+                                  const xEnd = cumulativeX + (lengthMm * pxPerMm)
+                                  cumulativeX = xEnd
+                                  return { part, xStart, xEnd, lengthMm }
+                                })
+                                
+                                return (
+                                  <>
+                                    {/* Part labels */}
+                                    {partPositions.map(({ part, xStart, xEnd }, partIdx) => {
+                                      // Use EXACT same calculations as SVG rendering section (lines 1150-1195)
+                                      const lastPartIdx = partPositions.length - 1
+                                      
+                                      // Calculate exactPartsEndPx (same as SVG line 1129-1131)
+                                      const exactPartsEndPx = partPositions.length > 0 
+                                        ? Math.floor(partPositions[lastPartIdx].xEnd)
+                                        : 0
+                                      
+                                      // Calculate xPx (same as SVG line 1150)
+                                      const xPx = partIdx === 0 ? 0 : Math.floor(xStart)
+                                      
+                                      // Calculate endPx (same as SVG lines 1155-1168)
+                                      let endPx: number
+                                      if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                        endPx = exactPartsEndPx
+                                      } else {
+                                        endPx = Math.floor(xEnd)
+                                      }
+                                      
+                                      // Calculate wPx (same as SVG line 1171)
+                                      let wPx = endPx - xPx
+                                      wPx = Math.max(1, Math.floor(wPx))
+                                      
+                                      // Only show label if part is wide enough
+                                      if (wPx < 20) return null
+                                      
+                                      // Get part number from mapping - use the EXACT same logic as SVG rendering
+                                      const partName = part.part?.reference || part.part?.element_name || part.part?.product_id || `b${partIdx + 1}`
+                                      const partNumber = partNameToNumber.get(partName) || partIdx + 1
+                                      
+                                      // Calculate actual polygon boundaries (same logic as SVG rendering lines 1288-1360)
+                                      let topLeftX = xPx
+                                      let topRightX = endPx
+                                      
+                                      try {
+                                        // Get part end info - need to use finalPartEnds from SVG section
+                                        // Since we can't access it, we'll calculate it the same way
+                                        const partData = part?.part || {}
+                                        const startRawAngle = partData.start_angle || null
+                                        const endRawAngle = partData.end_angle || null
+                                        
+                                        // Simplified calculation - match SVG logic as closely as possible
+                                        const startIsSlope = startRawAngle !== null && Math.abs(startRawAngle) > 0.5
+                                        const endIsSlope = endRawAngle !== null && Math.abs(endRawAngle) > 0.5
+                                        
+                                        const startType = startIsSlope ? 'miter' : 'straight'
+                                        const endType = endIsSlope ? 'miter' : 'straight'
+                                        
+                                        // Check if boundaries are shared (simplified - check if positions match)
+                                        let startIsShared = false
+                                        let endIsShared = false
+                                        
+                                        if (partIdx > 0) {
+                                          const prevEnd = partIdx === lastPartIdx && pattern.waste > 0 
+                                            ? exactPartsEndPx 
+                                            : Math.floor(partPositions[partIdx - 1].xEnd)
+                                          const thisStart = partIdx === 0 ? 0 : Math.floor(xStart)
+                                          startIsShared = prevEnd === thisStart
+                                        }
+                                        
+                                        if (partIdx < lastPartIdx) {
+                                          const thisEnd = Math.floor(xEnd)
+                                          const nextStart = Math.floor(partPositions[partIdx + 1].xStart)
+                                          endIsShared = thisEnd === nextStart
+                                        } else if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                          endIsShared = false
+                                        }
+                                        
+                                        // Use same constants as SVG rendering
+                                        const markerInset = 8
+                                        const markerDiagonalOffset = 12
+                                        
+                                        // Calculate polygon boundaries (EXACT same logic as SVG lines 1305-1352)
+                                        // Adjust for start cut (left side)
+                                        if (partIdx === 0) {
+                                          // First part: start at x=0 to eliminate gap with border
+                                          if (startType === 'miter' && !startIsShared) {
+                                            topLeftX = xPx
+                                          } else {
+                                            topLeftX = xPx
+                                          }
+                                        } else if (startType === 'miter' && !startIsShared) {
+                                          topLeftX = xPx + markerInset
+                                        } else if (startType === 'straight' && !startIsShared) {
+                                          topLeftX = xPx + markerInset
+                                        }
+                                        
+                                        // Adjust for end cut (right side) - EXACT same logic as SVG (lines 1330-1360)
+                                        if (partIdx === lastPartIdx && pattern.waste > 0) {
+                                          // Last part with waste: end exactly at exactPartsEndPx (no markerInset)
+                                          topRightX = exactPartsEndPx
+                                        } else if (partIdx === lastPartIdx && pattern.waste === 0) {
+                                          // Last part with 0 waste: extends to end of stockbar (1000px)
+                                          // When waste is 0, the part extends all the way to the stockbar border
+                                          // Use the stockbar width (1000) directly to ensure it matches the SVG polygon
+                                          // The SVG polygon also extends to 1000 when waste is 0
+                                          topRightX = 1000
+                                        } else if (endType === 'miter' && !endIsShared) {
+                                          topRightX = endPx - markerInset
+                                        } else if (endType === 'straight' && !endIsShared) {
+                                          topRightX = endPx - markerInset
+                                        } else {
+                                          // For shared boundaries, use endPx (flush with neighbor)
+                                          topRightX = endPx
+                                        }
+                                      } catch (e) {
+                                        // Fallback to raw coordinates if calculation fails
+                                        console.error('[NESTING] Error calculating polygon boundaries for label:', e)
+                                      }
+                                      
+                                      // Calculate center position using actual polygon boundaries (same as SVG line 1360)
+                                      const centerX = (topLeftX + topRightX) / 2
+                                      const centerXPercent = (centerX / 1000) * 100
+                                      
+                                      // Debug logging for part 2 (last part with 0 waste)
+                                      if (partIdx === lastPartIdx && pattern.waste === 0) {
+                                        console.log(`[LABEL-CENTER] Part ${partIdx} (${partName}):`, {
+                                          xPx,
+                                          endPx,
+                                          topLeftX,
+                                          topRightX,
+                                          centerX,
+                                          centerXPercent,
+                                          wPx,
+                                          waste: pattern.waste
+                                        })
+                                      }
+                                      
+                                      return (
+                                        <div
+                                          key={`part-label-${partIdx}`}
+                                          style={{
+                                            position: 'absolute',
+                                            left: `${centerXPercent}%`,
+                                            top: '50%',
+                                            transform: 'translate(-50%, -50%)',
+                                            fontFamily: 'system-ui, -apple-system, sans-serif',
+                                            fontSize: '12px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            textAlign: 'center',
+                                            lineHeight: '12px',
+                                            letterSpacing: '0',
+                                            fontStretch: 'normal',
+                                            fontVariant: 'normal',
+                                            textRendering: 'geometricPrecision',
+                                            whiteSpace: 'nowrap',
+                                            pointerEvents: 'none',
+                                            userSelect: 'none',
+                                            zIndex: 10
+                                          }}
+                                        >
+                                          {partNumber}
+                                        </div>
+                                      )
+                                    })}
+                                    
+                                    {/* Waste label removed as requested */}
+                                  </>
+                                )
+                              } catch (error) {
+                                return null
+                              }
+                            })()}
+                            </div>
+                        </div>
+                        {(pattern as any).exceeds_stock && (
+                          <div className="mt-1 text-xs text-red-600 font-semibold">
+                            ⚠️ This part ({formatLength(pattern.parts[0].length)}) is longer than the stock bar ({formatLength(pattern.stock_length)})
+                          </div>
+                        )}
+                        {(pattern as any).sloped_cut_pattern && (
+                          <div className="mt-2 text-xs text-green-700 font-semibold bg-green-50 px-2 py-1 rounded">
+                            ✂️ Sloped cuts: Parts can be cut from same bar using complementary angles (waste from one cut becomes material for the other)
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cutting list table */}
+                      <div className="text-sm mt-3">
+                        <div className="font-medium mb-2">Cutting list:</div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full border-collapse border border-gray-300">
+                            <thead>
+                              <tr className="bg-gray-100">
+                                <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Number</th>
+                                <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Profile Name</th>
+                                <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Part Name</th>
+                                <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Cut Length (mm)</th>
+                                <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Quantity</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                try {
+                                  // Group parts by reference/name and count occurrences
+                                  const partGroups = new Map<string, { name: string, length: number, count: number }>()
+                                  
+                                  pattern.parts.forEach((part) => {
+                                    try {
+                                      const partData = part?.part || {}
+                                      const partName = partData.reference || partData.element_name || 'Unknown'
+                                      const partLength = part?.length || 0
+                                      
+                                      if (partGroups.has(partName)) {
+                                        const existing = partGroups.get(partName)!
+                                        existing.count += 1
+                                        // Use the length from the first occurrence (they should all be the same)
+                                      } else {
+                                        partGroups.set(partName, {
+                                          name: partName,
+                                          length: partLength,
+                                          count: 1
+                                        })
+                                      }
+                                    } catch (e) {
+                                      // Ignore individual part errors
+                                    }
+                                  })
+                                  
+                                  // Convert to array and sort by length (longest first)
+                                  const sortedGroups = Array.from(partGroups.values()).sort((a, b) => {
+                                    // Sort by length descending (longest first)
+                                    return b.length - a.length
+                                  })
+                                  
+                                  return sortedGroups.map((group, idx) => {
+                                    // Always display length in mm
+                                    const lengthMm = Math.round(group.length)
+                                    const profileName = profile.profile_name || 'Unknown'
+                            
+                            return (
+                                      <tr key={idx} className="hover:bg-gray-50">
+                                        <td className="border border-gray-300 px-3 py-2">{idx + 1}</td>
+                                        <td className="border border-gray-300 px-3 py-2">{profileName}</td>
+                                        <td className="border border-gray-300 px-3 py-2">{group.name}</td>
+                                        <td className="border border-gray-300 px-3 py-2">{lengthMm}</td>
+                                        <td className="border border-gray-300 px-3 py-2">{group.count}</td>
+                                      </tr>
+                                    )
+                                  })
+                                } catch (error) {
+                                  console.error('[NestingReport] Error generating cutting list:', error)
+                                  return (
+                                    <tr>
+                                      <td colSpan={5} className="border border-gray-300 px-3 py-2 text-red-500 text-center">
+                                        Error generating cutting list
+                                      </td>
+                                    </tr>
+                                  )
+                                }
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+

@@ -1,0 +1,1062 @@
+
+[2025-12-21 14:25:05.507419] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 14:25:13.418067] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:25:14.542834] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:25:14.932424] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:28:33.053896] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:28:34.373459] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:29:17.019972] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:29:17.123112] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:32:18.317345] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:32:18.427465] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:32:25.478385] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:33:00.101890] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:33:00.197411] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:35:33.014926] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:35:33.118085] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:35:50.389993] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:36:03.050478] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:39:17.196138] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:39:17.285971] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:42:54.723661] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:42:54.987146] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:45:46.626961] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:45:47.070912] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:45:47.334819] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:48:01.121305] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:48:01.226032] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:51:24.537832] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:51:24.946448] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:54:31.579092] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:54:31.840642] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 14:59:51.794899] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 14:59:52.054387] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:02:28.737313] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:02:29.464403] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:01.108410] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 15:10:02.291041] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:02.936141] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:04.417369] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:14.595241] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:21.440580] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:39.875938] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:48.458886] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:10:56.915228] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:11:01.485188] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:11:52.236132] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 15:11:54.931807] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:11:55.070401] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 15:12:37.969815] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 15:13:31.683118] REQUEST: GET http://localhost:8000/api/gltf/out.glb
+
+[2025-12-21 15:13:39.142618] REQUEST: GET http://localhost:8000/api/assembly-mapping/out.ifc
+
+[2025-12-21 15:13:45.907918] REQUEST: GET http://localhost:8000/api/assembly-mapping/out.ifc
+
+[2025-12-21 16:22:42.127654] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 16:22:52.045564] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:22:52.640425] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:22:52.904348] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:27:41.790495] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:27:42.296411] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:27:42.512165] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:27:42.995413] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:27:45.485277] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:27:52.697004] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:28:01.080554] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:30:32.762250] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:30:33.054826] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:30:42.009871] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:34:36.770254] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:34:37.054981] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:36:36.779143] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:36:37.072155] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:19.147597] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:19.401948] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:21.007916] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:24.049871] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:29.041322] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:32.011837] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:37:41.035470] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:24.785092] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:39:25.141376] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:27.036667] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:29.075911] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:44.054394] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:53.609738] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 16:39:56.878757] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:39:57.086327] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:08.766790] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:41:09.242648] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:09.590201] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:11.089425] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:14.061393] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:26.736174] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:41:27.129915] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:41:52.741123] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:41:53.128069] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:42:01.633781] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:42:10.308746] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 16:42:12.447799] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:42:12.877201] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:42:13.131938] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:48:19.571612] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 16:48:22.911206] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:48:23.165417] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:48:23.665511] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:50:38.482529] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:50:38.660108] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:51:01.779217] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:51:02.153676] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:51:10.178212] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:54:28.775817] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:54:29.057151] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:54:36.028146] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:54:42.816551] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:56:33.507041] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:56:33.706409] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:57:00.228371] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:57:00.485455] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:57:13.410497] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:58:54.768296] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 16:58:55.104247] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:59:17.031809] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:59:31.064021] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 16:59:54.962854] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:00:08.698468] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 17:00:08.911332] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:00:21.041951] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:02:00.769847] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 17:02:01.048473] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:02:07.960267] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:02:19.093652] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:04:47.182166] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 17:04:47.286039] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:05:13.005721] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 17:05:22.013223] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 18:00:28.884467] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-21 18:00:31.632351] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 18:00:31.830396] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 18:00:32.041740] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 18:02:14.763216] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 18:02:15.032028] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 18:02:22.030659] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-21 18:02:31.754407] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-21 18:02:31.954039] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 08:48:57.516136] REQUEST: GET http://localhost:8000/api/health
+
+[2025-12-22 08:49:18.424815] REQUEST: GET http://localhost:8000/api/test-upload-path
+
+[2025-12-22 08:50:28.232710] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 08:50:37.868082] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 08:50:38.622199] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 08:50:38.813905] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:02:16.219416] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:02:16.621486] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:02:28.675269] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:02:40.498512] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:06:12.152529] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:06:12.666861] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:06:24.424395] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:06:45.139705] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:07:55.360489] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 09:07:58.896470] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:07:59.915913] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:08:01.008370] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:12:54.477453] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 09:12:57.965935] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:12:59.667486] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:13:00.778161] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:21:32.243023] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:21:32.652821] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:21:40.999051] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:21:52.524157] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:23:28.761088] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 09:23:31.519492] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:23:32.271807] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:23:32.664677] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:27:46.179692] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:27:46.715547] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:28:17.224996] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:28:17.889725] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:28:48.205564] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:28:48.641562] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:29:18.553157] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:29:34.148820] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:29:34.739185] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:29:50.670596] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 09:29:53.210157] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:29:53.575292] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:30:57.262701] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:30:57.568452] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:31:04.182987] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:31:04.704341] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:31:13.136901] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:31:13.421419] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:11.211825] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:32:11.519409] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:14.583407] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:27.134441] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:32:27.529621] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:28.195365] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:39.570419] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:32:50.144989] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:32:50.312998] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:50:16.238030] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 09:50:18.450243] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 09:50:18.606176] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 09:50:18.757346] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:00:34.007453] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:00:34.127733] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:00:34.256655] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:00:51.665015] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:00:55.614342] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:01:07.551854] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:31:07.163890] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:31:07.442495] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:31:19.523233] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:36:07.141249] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:36:07.648819] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:36:20.608322] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:37:03.600704] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:37:20.520260] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:45:21.201681] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:45:21.649103] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:45:26.578641] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:45:36.395848] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:47:09.668030] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:47:20.568945] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:48:47.735631] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:48:48.216633] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:49:12.308453] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:49:28.381995] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:49:42.289190] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 10:49:46.167860] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:49:46.288300] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:52:13.566767] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:52:15.020967] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:52:29.251726] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:54:09.685929] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:54:10.795162] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:54:23.341214] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:58:58.290854] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 10:58:58.705583] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:58:59.204276] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:59:10.009251] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:59:25.322595] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 10:59:36.728864] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:03:41.207408] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:03:41.610427] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:03:54.566780] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:04:08.546127] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:06:35.197886] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:06:35.536804] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:07:18.525489] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:07:40.455544] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:07:53.310930] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:10:50.067148] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 11:10:52.596971] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:10:52.793611] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:10:52.895484] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:12:35.154536] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:12:35.620061] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:12:56.169154] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:12:56.909610] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:13:13.140146] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:13:13.646861] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:13:26.378421] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:13:26.677151] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:14:32.125498] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:14:32.454243] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:14:56.232827] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:14:56.914689] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:15:10.528807] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:20:20.704851] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 11:20:23.170894] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:20:23.305538] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:20:23.444591] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:26:38.928667] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 11:26:41.355821] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:26:41.494631] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:26:41.621391] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:27:51.199274] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:27:51.599473] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:28:05.251108] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:28:05.626374] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:28:23.132002] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:28:23.490645] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:30:20.213008] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:30:20.598938] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:30:33.602054] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:33:25.243820] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:33:26.267811] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:33:26.946001] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:35:37.310218] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 11:35:39.834760] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:35:39.969604] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:35:40.093864] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:37:54.229317] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:37:54.757689] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:38:06.428264] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:39:30.194557] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:39:30.609424] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:39:30.939183] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:39:50.396444] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:39:58.166491] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:39:58.484704] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:40:01.442451] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:40:11.377572] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:41:49.198255] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:41:49.745981] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:41:50.197291] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:42:07.591552] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:42:10.481971] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:42:30.168403] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 11:42:30.561628] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:42:38.501234] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 11:42:48.376672] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:06.403021] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:04:07.162722] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:09.515407] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:11.462531] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:11.759469] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:40.347359] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:42.409437] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:04:45.995765] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:05:10.496376] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:05:22.820895] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:06:02.718478] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:06:08.568063] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 13:06:10.979635] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:06:11.116072] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:08:37.765886] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:08:38.091795] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:09:12.577638] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:09:37.645768] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:09:54.395175] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:10:07.537556] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:10:15.284334] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 13:10:17.833890] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:10:17.960547] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:11:38.757948] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:11:39.213767] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:11:40.602530] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:11:42.620608] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:11:55.552830] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:12:32.202806] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:17:08.241548] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:17:08.705967] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:17:21.588967] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:18:21.190999] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:18:21.645897] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:18:42.509304] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:22:09.267750] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:22:09.626542] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:22:19.706241] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:26:00.171611] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 13:26:03.978833] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:26:05.472233] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:26:07.483080] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:39:45.580215] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:39:46.990012] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:39:47.169033] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:40:08.212642] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:40:16.713206] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:40:50.720869] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:41:20.340324] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:41:20.775308] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:41:32.781395] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:45:06.673453] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:45:07.617855] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:45:29.656575] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:45:49.787329] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:49:45.336693] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:49:46.434290] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:50:29.738541] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:50:48.671495] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:51:14.642179] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:51:29.686422] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:51:59.786474] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 13:52:02.586229] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:52:03.066497] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:54:10.481684] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:54:10.796775] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:54:49.448407] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:54:49.846583] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:55:10.474641] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:55:10.811759] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:55:16.741255] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:55:40.389759] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:55:40.721081] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 13:59:31.421141] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 13:59:31.788435] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:00:52.842335] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 14:00:55.239741] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:00:55.380474] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:00:55.506777] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:03:09.455245] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:03:09.699642] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:03:30.393343] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:03:30.862797] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:06:36.431930] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:06:36.827253] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:06:55.190950] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:08:30.704585] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 14:08:33.250396] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:08:33.418562] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:08:33.529539] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:13:10.488822] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:13:10.931950] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:13:28.040610] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:22:18.557714] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:22:19.223262] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:22:19.660988] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:26:35.283830] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 14:26:38.090221] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:26:38.727141] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:26:39.086982] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:44:14.539828] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:44:15.024409] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:44:53.926431] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:45:01.299999] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:45:01.818765] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:45:10.939164] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:45:36.000446] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:46:30.482613] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 14:46:30.983199] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 14:46:46.896179] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:45:09.698035] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 16:45:20.395573] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 16:45:21.073258] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:45:21.331475] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:54:21.483286] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 16:54:22.578791] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:54:23.591980] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:54:45.720889] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:54:49.045832] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:55:10.938106] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:55:15.243976] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:55:27.531603] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 16:55:28.181611] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:59:05.485082] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 16:59:05.910551] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:59:27.788757] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 16:59:59.995016] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:00:05.677852] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:00:46.703796] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:00:46.785193] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:01:00.233102] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:09:37.954162] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:09:38.954294] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:09:52.120166] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:10:38.480239] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:10:47.531506] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:13:42.457539] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:13:42.638775] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:13:47.502675] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:13:58.732074] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:15:48.578349] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:15:56.571619] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:16:05.347990] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:17:46.347751] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:17:48.197552] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:17:50.382618] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:18:01.355748] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:18:16.735195] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:18:34.574863] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:18:38.300696] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:18:52.764502] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:19:26.157068] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 17:19:32.554984] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:19:32.703953] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:20:26.102091] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:20:33.967766] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:20:54.272027] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:21:08.258119] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:21:10.050160] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:21:18.232064] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:21:54.449293] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 17:22:01.824425] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:22:02.247449] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:22:02.611436] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:24:14.300250] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:24:14.994740] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:24:21.356980] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:24:50.693248] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:24:50.796460] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:25:02.094936] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:29:14.450723] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:29:15.198581] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:29:35.366632] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:29:49.345127] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:30:54.085575] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 17:31:01.953608] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:31:02.081941] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:31:02.544215] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:31:57.599125] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:31:58.583446] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:32:21.587499] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:32:22.700556] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:32:33.266985] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:32:33.858180] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:34:31.498219] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:34:32.757688] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:34:46.570767] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:35:00.380810] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:35:00.939926] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:36:14.264084] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:36:14.679863] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:36:15.011158] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:36:45.576401] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:36:47.841184] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:37:03.869760] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:37:24.573627] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:37:25.635822] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:37:41.038998] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:37:51.402385] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:37:57.106293] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 17:38:00.715206] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:38:00.838862] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:42:37.352322] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:42:38.543409] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:42:39.786563] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:42:57.904777] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:43:05.217354] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:43:06.598827] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:43:14.064950] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:43:59.867360] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:43:59.957982] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:44:49.220054] REQUEST: GET http://localhost:8000/api/gltf/HANUKIYA.glb
+
+[2025-12-22 17:44:49.547807] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:45:00.488665] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:45:18.577882] REQUEST: GET http://localhost:8000/api/assembly-mapping/HANUKIYA.ifc
+
+[2025-12-22 17:50:27.786710] REQUEST: POST http://localhost:8000/api/upload
+
+[2025-12-22 17:52:53.028715] REQUEST: GET http://localhost:8000/api/gltf/out.glb
+
+[2025-12-22 17:52:54.531240] REQUEST: GET http://localhost:8000/api/assembly-mapping/out.ifc
+
+[2025-12-22 17:52:55.790336] REQUEST: GET http://localhost:8000/api/assembly-mapping/out.ifc
+
+[2025-12-22 18:13:19.755625] REQUEST: GET http://localhost:8000/api/gltf/out.glb

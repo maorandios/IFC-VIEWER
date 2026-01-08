@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Storage
+storage/ifc/*
+storage/reports/*
+storage/gltf/*
+!storage/ifc/.gitkeep
+!storage/reports/.gitkeep
+!storage/gltf/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build
+build/
+*.tsbuildinfo
+
+
+
+
+
+
+
+
+
+
