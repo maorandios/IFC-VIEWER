@@ -4,6 +4,8 @@ Simple script to run the FastAPI server
 """
 import uvicorn
 import sys
+from pathlib import Path
+from datetime import datetime
 
 if __name__ == "__main__":
     # Configure uvicorn to show all logs and not use subprocess for reload

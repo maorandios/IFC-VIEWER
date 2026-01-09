@@ -611,7 +611,9 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
             // Calculate polygon points (same logic as app)
             const diagonalOffset = 12
             const SIGNIFICANT_MITER_DEG = 8.0
-            const hasSlopedStart = startType === 'miter' && !startIsShared && startDev >= SIGNIFICANT_MITER_DEG && partIdx > 0
+            // CRITICAL FIX: Allow first part to have sloped start if it's not shared
+            // For first part (partIdx === 0), startIsShared is always false, so we can check for sloped start
+            const hasSlopedStart = startType === 'miter' && !startIsShared && startDev >= SIGNIFICANT_MITER_DEG
             const hasSlopedEnd = endType === 'miter' && !endIsShared && endDev >= SIGNIFICANT_MITER_DEG && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
             
             // Calculate polygon vertices in app coordinates, then scale to PDF
@@ -770,9 +772,10 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
             
             return (
               <React.Fragment key={`non-shared-${partIdx}`}>
-                {/* Start boundary - only if NOT shared */}
-                {!startIsShared && partIdx > 0 && (() => {
-                  const boundaryX = Math.round(pos.xStart)
+                {/* Start boundary - only if NOT shared (including first part) */}
+                {!startIsShared && (() => {
+                  // For first part, boundary is at x=0; for others, use part's xStart
+                  const boundaryX = partIdx === 0 ? 0 : Math.round(pos.xStart)
                   const boundaryXScaled = boundaryX * widthScale
                   const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
                   
@@ -845,9 +848,12 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   
                   if (!shouldShowMarker) return null
                   
+                  // Safety check: ensure partPositions[partIdx + 1] exists
                   const boundaryX = partIdx === lastPartIdx && pattern.waste > 0
                     ? exactPartsEndPx
-                    : Math.round(partPositions[partIdx + 1].xStart)
+                    : (partIdx < numParts - 1 && partPositions[partIdx + 1])
+                      ? Math.round(partPositions[partIdx + 1].xStart)
+                      : exactPartsEndPx  // Fallback to exactPartsEndPx if next part doesn't exist
                   const boundaryXScaled = boundaryX * widthScale
                   const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
                   
