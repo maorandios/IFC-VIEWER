@@ -1,5 +1,5 @@
 import React from 'react'
-import { Document, Page, Text, View, StyleSheet, Image, Svg, Line } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Image, Svg, Line, Path, Polygon } from '@react-pdf/renderer'
 import { NestingReport as NestingReportType, SteelReport, CuttingPattern } from '../types'
 
 interface NestingReportPDFProps {
@@ -13,7 +13,7 @@ const styles = StyleSheet.create({
   page: {
     padding: 30,
     fontSize: 10,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Helvetica'
   },
   title: {
     fontSize: 18,
@@ -126,31 +126,29 @@ const styles = StyleSheet.create({
   },
 })
 
-// Helper function to render stock bar visualization - matches app structure exactly
+// StockBarVisualization - Completely rebuilt to match app exactly
 const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: string }> = ({ pattern, profileName }) => {
+  // Match app's coordinate system exactly
+  // App uses: viewBox="0 0 1000 60" (width=1000, height=60)
+  // PDF uses: 500x40 (scale: 0.5x width, 0.667x height)
+  const appWidth = 1000
+  const appHeight = 60
+  const pdfWidth = 500
+  const pdfHeight = 40
+  const widthScale = pdfWidth / appWidth  // 0.5
+  const heightScale = pdfHeight / appHeight  // 0.667
+  
   const stockLength = pattern.stock_length
-  const totalWidth = 500 // Width in points for PDF
-  const barHeight = 40
+  const pxPerMm = appWidth / stockLength  // Use app's scale for calculations
   
-  // Padding inside borders to prevent overlap
-  const borderPadding = 1  // 1px padding inside borders
-  
-  // Calculate inner container dimensions (accounting for borders)
-  const innerWidth = totalWidth - (borderPadding * 2)  // 498px
-  const innerHeight = barHeight - (borderPadding * 2)  // 38px
-  
-  // Scale factor based on INNER container width (not totalWidth)
-  // This ensures parts fit within the inner container and don't overlap borders
-  const pxPerMm = innerWidth / stockLength
-  
-  // A) Sort parts by length (descending) - EXACTLY like app
+  // Sort parts by length (descending) - EXACTLY like app
   const sortedParts = [...pattern.parts].sort((a, b) => {
     const lengthA = a.length || 0
     const lengthB = b.length || 0
-    return lengthB - lengthA // Descending order (longest first)
+    return lengthB - lengthA
   })
   
-  // B) Calculate cumulative X positions (flush, no gaps) - EXACTLY like app
+  // Calculate part positions using app's coordinate system
   let cumulativeX = 0
   const partPositions = sortedParts.map((part) => {
     const lengthMm = part.length || 0
@@ -162,18 +160,9 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
   
   const numParts = partPositions.length
   const lastPartIdx = numParts - 1
+  const exactPartsEndPx = partPositions.length > 0 ? Math.floor(partPositions[lastPartIdx].xEnd) : 0
   
-  // Calculate exact used length
-  const usedLengthMm = partPositions.length > 0 
-    ? partPositions[lastPartIdx].xEnd / pxPerMm 
-    : 0
-  
-  // Exact boundary between parts and waste (same calculation as app)
-  const exactPartsEndPx = partPositions.length > 0 
-    ? Math.floor(partPositions[lastPartIdx].xEnd)
-    : 0
-  
-  // C) Create part name to number mapping (for labels)
+  // Part name to number mapping
   const partNameToNumber = new Map<string, number>()
   const partGroups = new Map<string, { name: string, length: number, count: number }>()
   
@@ -183,14 +172,9 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
     const partLength = part?.length || 0
     
     if (partGroups.has(partName)) {
-      const existing = partGroups.get(partName)!
-      existing.count += 1
+      partGroups.get(partName)!.count += 1
     } else {
-      partGroups.set(partName, {
-        name: partName,
-        length: partLength,
-        count: 1
-      })
+      partGroups.set(partName, { name: partName, length: partLength, count: 1 })
     }
   })
   
@@ -199,14 +183,13 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
     partNameToNumber.set(group.name, idx + 1)
   })
   
-  // D) Determine part end types (straight vs miter)
+  // Determine part end types - EXACTLY like app
   interface PartEnd {
     type: 'straight' | 'miter'
     rawAngle: number | null
     deviation: number | null
   }
   
-  // Parse angle helper function
   const parseAngle = (value: any): number | null => {
     if (value === null || value === undefined) return null
     if (typeof value === 'number') return Number.isFinite(value) ? value : null
@@ -220,69 +203,46 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
     return null
   }
   
-  // Angle analysis interface
-  interface AngleAnalysis {
-    rawAngle: number | null
-    convention: 'ABS' | 'DEV' | null
-    deviation: number | null
-    isSlope: boolean
-  }
-  
-  // Analyze angle with convention detection (matching app logic)
-  const analyzeAngle = (rawAngle: number | null): AngleAnalysis => {
-    if (rawAngle === null) {
-      return { rawAngle: null, convention: null, deviation: null, isSlope: false }
-    }
+  const analyzeAngle = (rawAngle: number | null): { deviation: number | null, isSlope: boolean } => {
+    if (rawAngle === null) return { deviation: null, isSlope: false }
     
     const absAngle = Math.abs(rawAngle)
     const NEAR_STRAIGHT_THRESHOLD = 1.0
     const MIN_DEV_DEG = 1.0
     
-    // Detect convention: if angle is between 60-120, treat as ABS (90° = straight)
-    // Otherwise treat as DEV (0° = straight)
     let convention: 'ABS' | 'DEV'
     let deviation: number
     
     if (absAngle >= 60 && absAngle <= 120) {
-      // ABSOLUTE convention: 90° = straight
       convention = 'ABS'
       deviation = Math.abs(rawAngle - 90)
     } else {
-      // DEVIATION convention: 0° = straight
       convention = 'DEV'
       deviation = absAngle
     }
     
-    // Near-straight guard: force straight if very close
     let isSlope = false
     if (convention === 'ABS' && deviation < NEAR_STRAIGHT_THRESHOLD) {
-      isSlope = false // Force straight
+      isSlope = false
     } else if (convention === 'DEV' && deviation < NEAR_STRAIGHT_THRESHOLD) {
-      isSlope = false // Force straight
+      isSlope = false
     } else {
-      // Normal threshold check
       isSlope = deviation >= MIN_DEV_DEG
     }
     
-    return { rawAngle, convention, deviation, isSlope }
+    return { deviation, isSlope }
   }
   
   const partEnds = partPositions.map(({ part }) => {
     const slopeInfo = (part as any).slope_info || {}
     const startHasSlope = slopeInfo.start_has_slope === true
     const endHasSlope = slopeInfo.end_has_slope === true
-    const startRawAngle = slopeInfo.start_angle || null
-    const endRawAngle = slopeInfo.end_angle || null
+    const startRawAngle = parseAngle(slopeInfo.start_angle)
+    const endRawAngle = parseAngle(slopeInfo.end_angle)
     
-    const startAngle = parseAngle(startRawAngle)
-    const endAngle = parseAngle(endRawAngle)
+    const startAnalysis = analyzeAngle(startRawAngle)
+    const endAnalysis = analyzeAngle(endRawAngle)
     
-    // Use analyzeAngle to calculate deviation correctly (matching app logic)
-    const startAnalysis = analyzeAngle(startAngle)
-    const endAnalysis = analyzeAngle(endAngle)
-    
-    // Use backend's has_slope flags if available, otherwise use calculated isSlope
-    // For deviation, use the calculated deviation from analyzeAngle
     const startDev = startHasSlope && startAnalysis.deviation !== null 
       ? startAnalysis.deviation 
       : (startAnalysis.isSlope ? startAnalysis.deviation || 0 : 0)
@@ -292,179 +252,475 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
     
     const startCut: PartEnd = {
       type: startHasSlope ? 'miter' : 'straight',
-      rawAngle: startAngle,
+      rawAngle: startRawAngle,
       deviation: startDev
     }
     
     const endCut: PartEnd = {
       type: endHasSlope ? 'miter' : 'straight',
-      rawAngle: endAngle,
+      rawAngle: endRawAngle,
       deviation: endDev
     }
     
     return { startCut, endCut }
   })
   
-  // E) Determine shared boundaries (match app's logic more closely)
-  const sharedBoundarySet = new Set<number>()
+  // Calculate part flip states - EXACTLY like app (to get actual geometry at boundaries)
+  const partFlipStates: boolean[] = new Array(numParts).fill(false)
   
-  // Check internal boundaries between parts
+  // Step 1: Optimize first part - always start with straight if possible
+  if (numParts > 0) {
+    const firstPart = partEnds[0]
+    if (firstPart) {
+      // If first part has a straight end, flip it so straight is at position 0
+      if (firstPart.endCut.type === 'straight' && firstPart.startCut.type === 'miter') {
+        partFlipStates[0] = true
+      }
+    }
+  }
+  
+  // Step 2: For each subsequent part, check if flipping would create a shared boundary
+  const ANGLE_MATCH_TOL = 2.0
+  const NEAR_STRAIGHT_THRESHOLD = 1.0
+  
   for (let i = 1; i < numParts; i++) {
-    const leftPartEnd = partEnds[i - 1]
-    const rightPartEnd = partEnds[i]
-    // Match app: use Math.floor, not Math.round (line 1761 in app)
-    const rightPartXStart = partPositions[i].xStart
-    const boundaryX = i === 0 ? 0 : Math.floor(rightPartXStart)
+    const prevPart = partEnds[i - 1]
+    const currPart = partEnds[i]
     
-    const leftEndType = leftPartEnd.endCut.type
-    const rightStartType = rightPartEnd.startCut.type
-    const leftDev = leftPartEnd.endCut.deviation || 0
-    const rightDev = rightPartEnd.startCut.deviation || 0
+    if (!prevPart || !currPart) {
+      continue
+    }
     
-    const NEAR_STRAIGHT_THRESHOLD_FOR_SHARING = 1.0
-    const ANGLE_MATCH_TOL = 2.0
+    // Get previous part's end type (after potential flip)
+    const prevEndType = partFlipStates[i - 1] ? prevPart.startCut.type : prevPart.endCut.type
+    const prevEndDev = partFlipStates[i - 1] ? prevPart.startCut.deviation || 0 : prevPart.endCut.deviation || 0
     
-    // Match app's logic: both straight, both miter with similar angles, or mixed types
+    // Check current part's start type (normal) vs end type (if flipped)
+    const currStartTypeNormal = currPart.startCut.type
+    const currStartDevNormal = currPart.startCut.deviation || 0
+    const currStartTypeFlipped = currPart.endCut.type
+    const currStartDevFlipped = currPart.endCut.deviation || 0
+    
+    // Check which orientation creates a shared boundary
+    let normalIsShared = false
+    let flippedIsShared = false
+    
+    // Check normal orientation
+    if (prevEndType === 'straight' && currStartTypeNormal === 'straight') {
+      normalIsShared = true
+    } else if (prevEndType === 'miter' && currStartTypeNormal === 'miter') {
+      const devDiff = Math.abs(prevEndDev - currStartDevNormal)
+      normalIsShared = devDiff <= ANGLE_MATCH_TOL
+    } else {
+      const bothNearStraight = 
+        (prevEndDev < NEAR_STRAIGHT_THRESHOLD) && 
+        (currStartDevNormal < NEAR_STRAIGHT_THRESHOLD)
+      normalIsShared = bothNearStraight || true // Always share mixed types
+    }
+    
+    // Check flipped orientation
+    if (prevEndType === 'straight' && currStartTypeFlipped === 'straight') {
+      flippedIsShared = true
+    } else if (prevEndType === 'miter' && currStartTypeFlipped === 'miter') {
+      const devDiff = Math.abs(prevEndDev - currStartDevFlipped)
+      flippedIsShared = devDiff <= ANGLE_MATCH_TOL
+    } else {
+      const bothNearStraight = 
+        (prevEndDev < NEAR_STRAIGHT_THRESHOLD) && 
+        (currStartDevFlipped < NEAR_STRAIGHT_THRESHOLD)
+      flippedIsShared = bothNearStraight || true // Always share mixed types
+    }
+    
+    // Prefer flipped if it creates a better match (both straight or both miter with similar angles)
+    // vs mixed types
+    const normalIsBetterMatch = (prevEndType === currStartTypeNormal) && normalIsShared
+    const flippedIsBetterMatch = (prevEndType === currStartTypeFlipped) && flippedIsShared
+    
+    if (flippedIsBetterMatch && !normalIsBetterMatch) {
+      partFlipStates[i] = true
+    }
+  }
+  
+  // Determine shared boundaries - EXACTLY like app (copy the app's calculation logic)
+  const sharedBoundaries: Array<{ 
+    x: number, 
+    leftPartIdx: number, 
+    rightPartIdx: number, 
+    leftEndType: string, 
+    rightStartType: string, 
+    leftDev: number, 
+    rightDev: number 
+  }> = []
+  
+  const NEAR_STRAIGHT_THRESHOLD_FOR_SHARING = 1.0
+  
+  for (let i = 0; i < numParts - 1; i++) {
+    const leftPartIdx = i
+    const rightPartIdx = i + 1
+    
+    const leftPartEnd = partEnds[leftPartIdx]
+    const rightPartEnd = partEnds[rightPartIdx]
+    
+    if (!leftPartEnd || !rightPartEnd) {
+      continue
+    }
+    
+    // Use optimized flip states to get the actual geometry at boundaries (same as app)
+    const leftEndType = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
+    const rightStartType = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
+    const leftDev = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
+    const rightDev = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
+    
+    // Boundary x position is the start of the right part (same as app)
+    const rightPartXStart = partPositions[rightPartIdx].xStart
+    const boundaryX = rightPartIdx === 0 ? 0 : Math.floor(rightPartXStart)
+    
+    // Check if it's truly shared (same logic as app)
+    let isShared = false
+    
     if (leftEndType === 'straight' && rightStartType === 'straight') {
       // Both straight = shared straight boundary
-      sharedBoundarySet.add(boundaryX)
+      isShared = true
     } else if (leftEndType === 'miter' && rightStartType === 'miter') {
-      // Both miter = check if complementary (match app logic exactly)
+      // Both miter = check if complementary
       const devDiff = Math.abs(leftDev - rightDev)
-      if (devDiff <= ANGLE_MATCH_TOL) {
-        sharedBoundarySet.add(boundaryX)
-      }
+      isShared = devDiff <= ANGLE_MATCH_TOL // Complementary slopes
     } else {
-      // Mixed types: share the boundary and show the miter marker
+      // Mixed types: share the boundary and show the miter marker (the actual cut geometry)
       const bothNearStraight = 
         (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
         (rightDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING)
       
       if (bothNearStraight) {
         // Both are very close to straight = treat as shared straight boundary
-        sharedBoundarySet.add(boundaryX)
+        isShared = true
       } else {
         // One is straight, one is miter - still share the boundary
-        sharedBoundarySet.add(boundaryX)
+        isShared = true
       }
+    }
+    
+    if (isShared) {
+      sharedBoundaries.push({
+        x: boundaryX,
+        leftPartIdx,
+        rightPartIdx,
+        leftEndType,
+        rightStartType,
+        leftDev,
+        rightDev
+      })
     }
   }
   
-  // F) Calculate waste
+  // Build boundaryMap similar to app's resolveBoundary logic to determine ownerSide
+  // This replicates the app's boundaryMap.get(xSnapped)?.ownerSide logic
+  const boundaryMap = new Map<number, { ownerSide: 'left' | 'right' }>()
+  
+  sharedBoundaries.forEach(sb => {
+    if (sb.leftEndType === 'miter' && sb.rightStartType === 'miter') {
+      // Replicate resolveBoundary logic for determining ownerSide
+      const devDiff = Math.abs(sb.leftDev - sb.rightDev)
+      let ownerSide: 'left' | 'right'
+      
+      if (devDiff <= ANGLE_MATCH_TOL) {
+        // Treat as SHARED → draw ONE diagonal (prefer LEFT)
+        ownerSide = 'left'
+      } else {
+        // Choose the larger deviation (more sloped)
+        if (sb.leftDev > sb.rightDev) {
+          ownerSide = 'left'
+        } else if (sb.rightDev > sb.leftDev) {
+          ownerSide = 'right'
+        } else {
+          // Tie: prefer LEFT (deterministic)
+          ownerSide = 'left'
+        }
+      }
+      
+      boundaryMap.set(sb.x, { ownerSide })
+    }
+  })
+  
+  // Helper: Clip line to rectangle bounds (for diagonal boundaries)
+  const clipLineToBounds = (
+    x1: number, y1: number, x2: number, y2: number,
+    minX: number, minY: number, maxX: number, maxY: number
+  ): { x1: number, y1: number, x2: number, y2: number, visible: boolean } => {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    
+    if (Math.abs(dx) < 0.001) {
+      // Vertical
+      if (x1 < minX || x1 > maxX) return { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
+      return {
+        x1,
+        y1: Math.max(minY, Math.min(y1, maxY)),
+        x2,
+        y2: Math.max(minY, Math.min(y2, maxY)),
+        visible: true
+      }
+    }
+    
+    if (Math.abs(dy) < 0.001) {
+      // Horizontal
+      if (y1 < minY || y1 > maxY) return { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
+      return {
+        x1: Math.max(minX, Math.min(x1, maxX)),
+        y1,
+        x2: Math.max(minX, Math.min(x2, maxX)),
+        y2,
+        visible: true
+      }
+    }
+    
+    // Diagonal - find intersections
+    const slope = dy / dx
+    const intercept = y1 - slope * x1
+    
+    const points: Array<{ x: number, y: number, t: number }> = []
+    
+    // Check all edges
+    const edges = [
+      { x: minX, y: slope * minX + intercept, isX: true },
+      { x: maxX, y: slope * maxX + intercept, isX: true },
+      { x: (minY - intercept) / slope, y: minY, isX: false },
+      { x: (maxY - intercept) / slope, y: maxY, isX: false }
+    ]
+    
+    edges.forEach(edge => {
+      if (edge.isX) {
+        if (edge.y >= minY && edge.y <= maxY) {
+          const t = (edge.x - x1) / dx
+          if (t >= 0 && t <= 1) {
+            points.push({ x: edge.x, y: edge.y, t })
+          }
+        }
+      } else {
+        if (edge.x >= minX && edge.x <= maxX) {
+          const t = (edge.x - x1) / dx
+          if (t >= 0 && t <= 1) {
+            points.push({ x: edge.x, y: edge.y, t })
+          }
+        }
+      }
+    })
+    
+    // Add endpoints if inside
+    if (x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) {
+      points.push({ x: x1, y: y1, t: 0 })
+    }
+    if (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY) {
+      points.push({ x: x2, y: y2, t: 1 })
+    }
+    
+    if (points.length < 2) {
+      return { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
+    }
+    
+    points.sort((a, b) => a.t - b.t)
+    return {
+      x1: points[0].x,
+      y1: points[0].y,
+      x2: points[points.length - 1].x,
+      y2: points[points.length - 1].y,
+      visible: true
+    }
+  }
+  
+  // Create sharedBoundarySet for quick lookup (same as app)
+  const sharedBoundarySet = new Set<number>()
+  sharedBoundaries.forEach(sb => {
+    sharedBoundarySet.add(sb.x)
+  })
+  
+  // Calculate waste
   const wasteWidth = pattern.waste > 0 ? (pattern.waste * pxPerMm) : 0
   
-  // Content area dimensions (accounting for borders)
-  const contentWidth = totalWidth - 2  // Account for left and right borders (1px each)
-  const contentHeight = barHeight - 2  // Account for top and bottom borders (1px each)
+  // CRITICAL FIX: Calculate content area dimensions accounting for 1px border on all sides
+  // Add padding to prevent parts from overlapping borders (same on all sides)
+  const borderInset = 1
+  const contentPadding = 1  // Padding to prevent overlap - same on all sides (top, left, bottom, right)
+  const contentWidth = pdfWidth - 2 * borderInset - contentPadding
+  const contentHeight = pdfHeight - 2 * borderInset - contentPadding
   
   return (
     <View style={styles.stockBarContainer}>
-      {/* Stock bar container - NO borders, we'll render them separately as overlays */}
-      <View style={{ 
+      {/* Main container - matches app's border */}
+      <View style={{
         position: 'relative',
-        height: barHeight, 
-        width: totalWidth,
+        height: pdfHeight,
+        width: pdfWidth,
         marginBottom: 5,
+        borderWidth: 1,
+        borderColor: '#d1d5db',
+        borderStyle: 'solid',
         backgroundColor: '#ffffff',
       }}>
-        {/* Inner container - content area (1px inset for borders) */}
+        {/* Content area with clipping - scaled from app's 1000x60 */}
+        {/* CRITICAL FIX: Inset by border width + small padding to prevent overlap */}
         <View style={{
           position: 'absolute',
-          left: 1,  // 1px for left border
-          top: 1,   // 1px for top border
-          width: contentWidth,
-          height: contentHeight,
+          left: borderInset,  // Inset by border width
+          top: borderInset,   // Inset by border width
+          width: contentWidth + contentPadding,  // Account for border + padding
+          height: contentHeight + contentPadding,  // Account for border + padding
+          overflow: 'hidden',  // Critical: clip everything to this container
         }}>
-          {/* Render parts - EXACTLY like app */}
-        {partPositions.map((pos, partIdx) => {
-          const partName = pos.part?.part?.reference || pos.part?.part?.element_name || `b${partIdx + 1}`
-          const partNumber = partNameToNumber.get(partName) || partIdx + 1
-          const partEndInfo = partEnds[partIdx]
-          
-          // Calculate X position relative to inner container (no border offset needed)
-          const xPx = partIdx === 0 ? 0 : Math.floor(pos.xStart)
-          
-          // Calculate end position (last part uses exact boundary)
-          let endPx: number
-          if (partIdx === lastPartIdx && pattern.waste > 0) {
-            endPx = exactPartsEndPx
-          } else {
-            endPx = Math.floor(pos.xEnd)
-          }
-          
-          // Ensure we don't exceed content area width
-          const maxRightX = contentWidth
-          if (endPx > maxRightX) {
-            endPx = maxRightX
-          }
-          
-          // Calculate width
-          let wPx = endPx - xPx
-          if (partIdx === lastPartIdx && pattern.waste > 0) {
-            const maxAllowedWidth = exactPartsEndPx - xPx
-            wPx = Math.floor(maxAllowedWidth)
-          } else {
-            wPx = Math.floor(wPx)
-          }
-          wPx = Math.max(1, wPx)
-          
-          // Check if boundaries are shared
-          let startIsShared = false
-          let endIsShared = false
-          
-          if (partIdx > 0) {
-            // Match app: use Math.floor, not Math.round (line 1415 in app)
-            const boundaryX = Math.floor(pos.xStart)
-            startIsShared = sharedBoundarySet.has(boundaryX)
-          }
-          
-          if (partIdx < numParts - 1) {
-            // Match app: use Math.floor, not Math.round (line 1421 in app)
-            const rightPartXStart = partPositions[partIdx + 1].xStart
-            const boundaryX = (partIdx + 1) === 0 ? 0 : Math.floor(rightPartXStart)
-            endIsShared = sharedBoundarySet.has(boundaryX)
-          } else if (partIdx === lastPartIdx && pattern.waste > 0) {
-            endIsShared = false // Last part with waste - always show end boundary
-          }
-          
-          // Polygon boundaries (parts fill entire width within content area)
-          const polyLeftX = xPx
-          let polyRightX: number
-          if (partIdx === lastPartIdx && pattern.waste > 0) {
-            polyRightX = exactPartsEndPx
-          } else if (partIdx === lastPartIdx && pattern.waste === 0) {
-            // Last part with no waste - extend to content area edge
-            polyRightX = contentWidth
-          } else {
-            polyRightX = endPx
-          }
-          
-          // Ensure width doesn't exceed content area
-          const partWidth = polyRightX - polyLeftX
-          const maxWidth = contentWidth - polyLeftX
-          const finalWidth = Math.min(partWidth, maxWidth)
-          
-          const isLastPart = partIdx === lastPartIdx && pattern.waste > 0
-          
-          return (
-            <View key={partIdx} style={{ position: 'relative' }}>
-              {/* Part rectangle - light gray like app */}
+          {/* Render parts - match app exactly with polygon shapes for sloped boundaries */}
+          {partPositions.map((pos, partIdx) => {
+            const partName = pos.part?.part?.reference || pos.part?.part?.element_name || `b${partIdx + 1}`
+            const partNumber = partNameToNumber.get(partName) || partIdx + 1
+            
+            const partEnd = partEnds[partIdx]
+            if (!partEnd) return null
+            
+            const isFlipped = partFlipStates[partIdx]
+            const startType = isFlipped ? partEnd.endCut.type : partEnd.startCut.type
+            const endType = isFlipped ? partEnd.startCut.type : partEnd.endCut.type
+            const startDev = isFlipped ? partEnd.endCut.deviation || 0 : partEnd.startCut.deviation || 0
+            const endDev = isFlipped ? partEnd.startCut.deviation || 0 : partEnd.endCut.deviation || 0
+            
+            // Check if boundaries are shared
+            let startIsShared = false
+            let endIsShared = false
+            
+            if (partIdx > 0) {
+              const boundaryX = partIdx === 0 ? 0 : Math.floor(pos.xStart)
+              startIsShared = sharedBoundarySet.has(boundaryX)
+            }
+            
+            if (partIdx < numParts - 1) {
+              const rightPartXStart = partPositions[partIdx + 1].xStart
+              const boundaryX = (partIdx + 1) === 0 ? 0 : Math.floor(rightPartXStart)
+              endIsShared = sharedBoundarySet.has(boundaryX)
+            } else if (partIdx === lastPartIdx && pattern.waste > 0) {
+              endIsShared = false
+            }
+            
+            // Match app's calculation exactly
+            const xPx = partIdx === 0 ? 0 : Math.floor(pos.xStart)
+            let endPx = partIdx === lastPartIdx && pattern.waste > 0 
+              ? exactPartsEndPx 
+              : Math.floor(pos.xEnd)
+            
+            // Scale to PDF coordinates
+            const xPxScaled = xPx * widthScale
+            const endPxScaled = endPx * widthScale
+            
+            // Calculate polygon points (same logic as app)
+            const diagonalOffset = 12
+            const SIGNIFICANT_MITER_DEG = 8.0
+            const hasSlopedStart = startType === 'miter' && !startIsShared && startDev >= SIGNIFICANT_MITER_DEG && partIdx > 0
+            const hasSlopedEnd = endType === 'miter' && !endIsShared && endDev >= SIGNIFICANT_MITER_DEG && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
+            
+            // Calculate polygon vertices in app coordinates, then scale to PDF
+            let polyLeftX = xPx
+            let polyRightX = endPx
+            
+            if (partIdx === lastPartIdx && pattern.waste > 0 && hasSlopedEnd) {
+              polyRightX = exactPartsEndPx
+            }
+            
+            // Scale polygon coordinates
+            const polyLeftXScaled = polyLeftX * widthScale
+            const polyRightXScaled = polyRightX * widthScale
+            const diagonalOffsetScaled = diagonalOffset * widthScale
+            
+            // Create polygon points (same as app)
+            let points: Array<{ x: number, y: number }> = []
+            
+            if (hasSlopedStart && hasSlopedEnd) {
+              // Both boundaries are sloped: 4 points (trapezoid)
+              const topLeftX = polyLeftXScaled
+              const topRightX = polyRightXScaled - diagonalOffsetScaled
+              const bottomLeftX = polyLeftXScaled + diagonalOffsetScaled
+              const bottomRightX = polyRightXScaled
+              points = [
+                { x: topLeftX, y: 0 },
+                { x: topRightX, y: 0 },
+                { x: bottomRightX, y: contentHeight - contentPadding },
+                { x: bottomLeftX, y: contentHeight - contentPadding }
+              ]
+            } else if (hasSlopedStart) {
+              // Only start boundary is sloped: 4 points
+              const topLeftX = polyLeftXScaled
+              const bottomLeftX = polyLeftXScaled + diagonalOffsetScaled
+              points = [
+                { x: topLeftX, y: 0 },
+                { x: polyRightXScaled, y: 0 },
+                { x: polyRightXScaled, y: contentHeight - contentPadding },
+                { x: bottomLeftX, y: contentHeight - contentPadding }
+              ]
+            } else if (hasSlopedEnd) {
+              // Only end boundary is sloped: 4 points
+              const topRightX = polyRightXScaled - diagonalOffsetScaled
+              const bottomRightX = polyRightXScaled
+              points = [
+                { x: polyLeftXScaled, y: 0 },
+                { x: topRightX, y: 0 },
+                { x: bottomRightX, y: contentHeight - contentPadding },
+                { x: polyLeftXScaled, y: contentHeight - contentPadding }
+              ]
+            } else {
+              // Both boundaries are straight: 4 points (rectangle)
+              points = [
+                { x: polyLeftXScaled, y: 0 },
+                { x: polyRightXScaled, y: 0 },
+                { x: polyRightXScaled, y: contentHeight - contentPadding },
+                { x: polyLeftXScaled, y: contentHeight - contentPadding }
+              ]
+            }
+            
+            // Clamp points to content area
+            const maxRight = contentWidth - contentPadding
+            points = points.map(p => ({
+              x: Math.max(0, Math.min(p.x, maxRight)),
+              y: Math.max(0, Math.min(p.y, contentHeight - contentPadding))
+            }))
+            
+            // Convert to string format for Polygon
+            const pointsString = points.map(p => `${p.x},${p.y}`).join(' ')
+            
+            // Calculate center for label
+            const centerX = (polyLeftXScaled + polyRightXScaled) / 2
+            const centerY = (contentHeight - contentPadding) / 2
+            
+            return (
               <View
+                key={partIdx}
                 style={{
                   position: 'absolute',
-                  left: polyLeftX,
+                  left: 0,
                   top: 0,
-                  width: finalWidth,
+                  width: contentWidth,
                   height: contentHeight,
-                  backgroundColor: '#f3f4f6', // Light gray matching app
+                  overflow: 'hidden',
                 }}
               >
+                {/* Gray background polygon - matches app's polygon shape */}
+                <Svg
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: contentWidth,
+                    height: contentHeight,
+                  }}
+                >
+                  <Polygon
+                    points={pointsString}
+                    fill="#f3f4f6"
+                    stroke="none"
+                  />
+                </Svg>
+                
                 {/* Part label */}
-                {wPx >= 30 && (
+                {Math.abs(polyRightXScaled - polyLeftXScaled) >= 15 && (
                   <Text style={{
                     position: 'absolute',
-                    left: finalWidth / 2 - 3,
-                    top: contentHeight / 2 - 4,
+                    left: centerX - 3,
+                    top: centerY - 4,
                     fontSize: 8,
                     fontWeight: 'bold',
                     color: '#4b5563',
@@ -473,336 +729,439 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   </Text>
                 )}
               </View>
-              
-              {/* Non-shared boundary markers (per part) */}
-              {!startIsShared && partIdx > 0 && (
-                <>
-                  {partEndInfo.startCut.type === 'miter' ? (
+            )
+          })}
+          
+          {/* Render non-shared boundaries for each part (same as app) */}
+          {partPositions.map((pos, partIdx) => {
+            const partEnd = partEnds[partIdx]
+            if (!partEnd) return null
+            
+            const isFlipped = partFlipStates[partIdx]
+            const startType = isFlipped ? partEnd.endCut.type : partEnd.startCut.type
+            const endType = isFlipped ? partEnd.startCut.type : partEnd.endCut.type
+            const startDev = isFlipped ? partEnd.endCut.deviation || 0 : partEnd.startCut.deviation || 0
+            const endDev = isFlipped ? partEnd.startCut.deviation || 0 : partEnd.endCut.deviation || 0
+            
+            // Check if boundaries are shared
+            // CRITICAL: Use the same boundaryX calculation as sharedBoundaries (Math.floor, not Math.round)
+            let startIsShared = false
+            let endIsShared = false
+            
+            if (partIdx > 0) {
+              // Use same calculation as sharedBoundaries: Math.floor(rightPartXStart) where rightPartIdx = partIdx
+              const boundaryX = partIdx === 0 ? 0 : Math.floor(pos.xStart)
+              startIsShared = sharedBoundarySet.has(boundaryX)
+            }
+            
+            if (partIdx < numParts - 1) {
+              // Use same calculation as sharedBoundaries: Math.floor(rightPartXStart) where rightPartIdx = partIdx + 1
+              const rightPartXStart = partPositions[partIdx + 1].xStart
+              const boundaryX = (partIdx + 1) === 0 ? 0 : Math.floor(rightPartXStart)
+              endIsShared = sharedBoundarySet.has(boundaryX)
+            } else if (partIdx === lastPartIdx && pattern.waste > 0) {
+              // Last part with waste - always show end boundary (it's not shared with another part)
+              endIsShared = false
+            }
+            
+            const diagonalOffset = 12
+            const SIGNIFICANT_MITER_DEG = 8.0
+            const maxRight = contentWidth - contentPadding
+            
+            return (
+              <React.Fragment key={`non-shared-${partIdx}`}>
+                {/* Start boundary - only if NOT shared */}
+                {!startIsShared && partIdx > 0 && (() => {
+                  const boundaryX = Math.round(pos.xStart)
+                  const boundaryXScaled = boundaryX * widthScale
+                  const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
+                  
+                  if (startType === 'miter' && startDev >= SIGNIFICANT_MITER_DEG) {
                     // Sloped start boundary - draw diagonal line
-                    // Part is on the right of this boundary, so ownerSide is 'right'
-                    // Diagonal goes from (boundaryX, 0) to (boundaryX + 12, height)
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: polyLeftX,  // At the boundary
-                        top: 0,
-                        width: 12,
-                        height: contentHeight,
-                      }}
-                    >
+                    // Part is on the right of this boundary, so diagonal goes from (boundaryX, 0) to (boundaryX + 12, height)
+                    let x1App = boundaryX + 0.5
+                    let y1App = 0.5
+                    let x2App = boundaryX + diagonalOffset + 0.5
+                    let y2App = appHeight - 0.5
+                    
+                    // Clip to app's bounds
+                    const clipped = clipLineToBounds(x1App, y1App, x2App, y2App, 0, 0, appWidth, appHeight)
+                    if (!clipped.visible) return null
+                    
+                    // Scale to PDF coordinates
+                    const x1Pdf = clipped.x1 * widthScale
+                    const y1Pdf = clipped.y1 * heightScale
+                    const x2Pdf = clipped.x2 * widthScale
+                    const y2Pdf = clipped.y2 * heightScale
+                    
+                    // Clip to content area bounds (with padding gap at bottom like straight boundaries)
+                    const clippedPdf = clipLineToBounds(x1Pdf, y1Pdf, x2Pdf, y2Pdf, 0, 0, contentWidth, contentHeight - contentPadding)
+                    if (!clippedPdf.visible) return null
+                    
+                    // Draw diagonal line as solid line using Svg
+                    return (
                       <Svg
+                        key={`start-boundary-${partIdx}`}
                         style={{
                           position: 'absolute',
                           left: 0,
                           top: 0,
-                          width: 12,
+                          width: contentWidth,
                           height: contentHeight,
                         }}
                       >
                         <Line
-                          x1="0"
-                          y1="0"
-                          x2="12"
-                          y2={String(contentHeight)}
+                          x1={String(clippedPdf.x1)}
+                          y1={String(clippedPdf.y1)}
+                          x2={String(clippedPdf.x2)}
+                          y2={String(clippedPdf.y2)}
                           stroke="#d1d5db"
-                          strokeWidth={1}
+                          strokeWidth="1"
                         />
                       </Svg>
-                    </View>
-                  ) : (
+                    )
+                  } else {
                     // Straight start boundary
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: polyLeftX,
-                        top: 0,
-                        width: 1,
-                        height: contentHeight,
-                        backgroundColor: '#d1d5db',
-                      }}
-                    />
-                  )}
-                </>
-              )}
-              
-              {!endIsShared && partIdx < numParts - 1 && (
-                <>
-                  {partEndInfo.endCut.type === 'miter' ? (
-                    // Sloped end boundary - draw diagonal line
-                    // Part is on the left of this boundary, so ownerSide is 'left'
-                    // Diagonal goes from (boundaryX - 12, 0) to (boundaryX, height)
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: polyRightX - 12,  // Start 12px before boundary
-                        top: 0,
-                        width: 12,
-                        height: contentHeight,
-                      }}
-                    >
-                      <Svg
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          top: 0,
-                          width: 12,
-                          height: contentHeight,
-                        }}
-                      >
-                        <Line
-                          x1="12"
-                          y1="0"
-                          x2="0"
-                          y2={String(contentHeight)}
-                          stroke="#d1d5db"
-                          strokeWidth={1}
-                        />
-                      </Svg>
-                    </View>
-                  ) : (
-                    // Straight end boundary
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: polyRightX - 1,
-                        top: 0,
-                        width: 1,
-                        height: contentHeight,
-                        backgroundColor: '#d1d5db',
-                      }}
-                    />
-                  )}
-                </>
-              )}
-              
-              {/* Last part end boundary - handle both with waste and without waste */}
-              {(isLastPart || (partIdx === lastPartIdx && pattern.waste === 0)) && (() => {
-                // Determine the actual end boundary position
-                const endBoundaryX = isLastPart ? exactPartsEndPx : contentWidth
-                
-                return (
-                  <>
-                    {partEndInfo.endCut.type === 'miter' ? (
-                      // Sloped end boundary - draw diagonal line
-                      // Part is on the left of this boundary, so ownerSide is 'left'
-                      // Diagonal goes from (boundaryX - 12, 0) to (boundaryX, height)
+                    return (
                       <View
+                        key={`start-boundary-${partIdx}`}
                         style={{
                           position: 'absolute',
-                          left: endBoundaryX - 12,  // Start 12px before boundary
-                          top: 0,
-                          width: 12,
-                          height: contentHeight,
-                        }}
-                      >
-                        <Svg
-                          style={{
-                            position: 'absolute',
-                            left: 0,
-                            top: 0,
-                            width: 12,
-                            height: contentHeight,
-                          }}
-                        >
-                          <Line
-                            x1="12"
-                            y1="0"
-                            x2="0"
-                            y2={String(contentHeight)}
-                            stroke="#d1d5db"
-                            strokeWidth={1}
-                          />
-                        </Svg>
-                      </View>
-                    ) : (
-                      // Straight end boundary
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: endBoundaryX,
+                          left: clampedX,
                           top: 0,
                           width: 1,
-                          height: contentHeight,
+                          height: contentHeight - contentPadding,
                           backgroundColor: '#d1d5db',
                         }}
                       />
-                    )}
-                  </>
-                )
-              })()}
-            </View>
-          )
-        })}
-        
-          {/* Render shared boundary markers - EXACTLY like app */}
-          {Array.from({ length: numParts - 1 }).map((_, i) => {
-            const leftPartIdx = i
-            const rightPartIdx = i + 1
-            // Match app: use Math.floor, not Math.round (line 1761 in app)
-            const rightPartXStart = partPositions[rightPartIdx].xStart
-            const boundaryX = rightPartIdx === 0 ? 0 : Math.floor(rightPartXStart)  // Relative to inner container
+                    )
+                  }
+                })()}
+                
+                {/* End boundary - only if NOT shared or last part with waste */}
+                {(() => {
+                  const isLastPartWithWaste = partIdx === lastPartIdx && pattern.waste > 0
+                  const shouldShowMarker = !endIsShared || isLastPartWithWaste
+                  
+                  if (!shouldShowMarker) return null
+                  
+                  const boundaryX = partIdx === lastPartIdx && pattern.waste > 0
+                    ? exactPartsEndPx
+                    : Math.round(partPositions[partIdx + 1].xStart)
+                  const boundaryXScaled = boundaryX * widthScale
+                  const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
+                  
+                  if (endType === 'miter' && endDev >= SIGNIFICANT_MITER_DEG) {
+                    // Sloped end boundary - draw diagonal line
+                    // Part is on the left of this boundary, so diagonal goes from (boundaryX - 12, 0) to (boundaryX, height)
+                    let x1App = boundaryX - diagonalOffset + 0.5
+                    let y1App = 0.5
+                    let x2App = boundaryX + 0.5
+                    let y2App = appHeight - 0.5
+                    
+                    // Clip to app's bounds
+                    const clipped = clipLineToBounds(x1App, y1App, x2App, y2App, 0, 0, appWidth, appHeight)
+                    if (!clipped.visible) return null
+                    
+                    // Scale to PDF coordinates
+                    const x1Pdf = clipped.x1 * widthScale
+                    const y1Pdf = clipped.y1 * heightScale
+                    const x2Pdf = clipped.x2 * widthScale
+                    const y2Pdf = clipped.y2 * heightScale
+                    
+                    // Clip to content area bounds (with padding gap at bottom like straight boundaries)
+                    const clippedPdf = clipLineToBounds(x1Pdf, y1Pdf, x2Pdf, y2Pdf, 0, 0, contentWidth, contentHeight - contentPadding)
+                    if (!clippedPdf.visible) return null
+                    
+                    // Draw diagonal line as solid line using Svg
+                    return (
+                      <Svg
+                        key={`end-boundary-${partIdx}`}
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          top: 0,
+                          width: contentWidth,
+                          height: contentHeight,
+                        }}
+                      >
+                        <Line
+                          x1={String(clippedPdf.x1)}
+                          y1={String(clippedPdf.y1)}
+                          x2={String(clippedPdf.x2)}
+                          y2={String(clippedPdf.y2)}
+                          stroke="#d1d5db"
+                          strokeWidth="1"
+                        />
+                      </Svg>
+                    )
+                  } else {
+                    // Straight end boundary
+                    return (
+                      <View
+                        key={`end-boundary-${partIdx}`}
+                        style={{
+                          position: 'absolute',
+                          left: clampedX,
+                          top: 0,
+                          width: 1,
+                          height: contentHeight - contentPadding,
+                          backgroundColor: '#d1d5db',
+                        }}
+                      />
+                    )
+                  }
+                })()}
+              </React.Fragment>
+            )
+          })}
+          
+          {/* Render shared boundaries using the calculated sharedBoundaries array (same as app) */}
+          {sharedBoundaries.map((sb, idx) => {
+            const xSnapped = sb.x
+            const boundaryXScaled = xSnapped * widthScale
+            const maxRight = contentWidth - contentPadding
             
-            if (!sharedBoundarySet.has(boundaryX)) return null
-            
-            const leftPartEnd = partEnds[leftPartIdx]
-            const rightPartEnd = partEnds[rightPartIdx]
-            const leftEndType = leftPartEnd.endCut.type
-            const rightStartType = rightPartEnd.startCut.type
-            
-            if (leftEndType === 'straight' && rightStartType === 'straight') {
+            // Draw shared marker at the exact boundary position (same as app)
+            if (sb.leftEndType === 'straight' && sb.rightStartType === 'straight') {
               // Shared straight boundary
+              const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
+              
               return (
                 <View
-                  key={`shared-${i}`}
+                  key={`shared-boundary-${idx}`}
                   style={{
                     position: 'absolute',
-                    left: boundaryX,
+                    left: clampedX,
                     top: 0,
                     width: 1,
-                    height: contentHeight,
+                    height: contentHeight - contentPadding,
                     backgroundColor: '#d1d5db',
                   }}
                 />
               )
-            } else if (leftEndType === 'miter' || rightStartType === 'miter') {
-              // Shared sloped boundary - draw diagonal line
-              const diagonalOffset = 12 // Same as app
+            } else if (sb.leftEndType === 'miter' && sb.rightStartType === 'miter') {
+              // Shared sloped boundary - both miter
+              const diagonalOffset = 12
               
-              // Determine ownerSide based on deviations (like app does)
-              let ownerSide: 'left' | 'right'
-              if (leftEndType === 'miter' && rightStartType === 'miter') {
-                // Both miter - use deviation to determine ownerSide
-                const leftDev = leftPartEnd.endCut.deviation || 0
-                const rightDev = rightPartEnd.startCut.deviation || 0
-                const ANGLE_MATCH_TOL = 2.0
-                
-                if (Math.abs(leftDev - rightDev) <= ANGLE_MATCH_TOL) {
-                  // Similar deviations - prefer left (like app)
-                  ownerSide = 'left'
-                } else if (leftDev > rightDev) {
-                  ownerSide = 'left'
-                } else {
-                  ownerSide = 'right'
-                }
-              } else {
-                // One is miter, one is straight - owner is the miter side
-                ownerSide = leftEndType === 'miter' ? 'left' : 'right'
-              }
+              // Find the resolved boundary to get ownerSide (same as app)
+              const resolvedBoundary = boundaryMap.get(xSnapped)
+              const ownerSide = resolvedBoundary?.ownerSide || 'left'
               
-              // Match app exactly: use xSnapped (which is boundaryX) and add 0.5 offset
-              const xSnapped = boundaryX
-              
-              // Calculate diagonal line endpoints (exactly like app - no clamping)
-              let x1: number
-              let x2: number
-              
+              // Calculate diagonal endpoints in app coordinates (with +0.5 offset like app)
+              let x1App, y1App, x2App, y2App
               if (ownerSide === 'left') {
-                x1 = xSnapped - diagonalOffset
-                x2 = xSnapped
+                x1App = xSnapped - diagonalOffset + 0.5
+                y1App = 0.5
+                x2App = xSnapped + 0.5
+                y2App = appHeight - 0.5
               } else {
-                x1 = xSnapped
-                x2 = xSnapped + diagonalOffset
+                x1App = xSnapped + 0.5
+                y1App = 0.5
+                x2App = xSnapped + diagonalOffset + 0.5
+                y2App = appHeight - 0.5
               }
               
-              // Add 0.5 offset like app does (line 1889-1892)
-              // Coordinates are relative to inner container (0-contentWidth for x, 0-contentHeight for y)
-              const x1Final = x1 + 0.5
-              const x2Final = x2 + 0.5
-              const y1Final = 0.5
-              const y2Final = contentHeight - 0.5  // Use contentHeight to match inner container height
+              // Clip to app's bounds (0 to 1000, 0 to 60)
+              const clipped = clipLineToBounds(x1App, y1App, x2App, y2App, 0, 0, appWidth, appHeight)
               
-              // Draw line directly without clamping (like app)
+              if (!clipped.visible) return null
+              
+              // Scale to PDF coordinates
+              const x1Pdf = clipped.x1 * widthScale
+              const y1Pdf = clipped.y1 * heightScale
+              const x2Pdf = clipped.x2 * widthScale
+              const y2Pdf = clipped.y2 * heightScale
+              
+              // CRITICAL FIX: Clip to content area bounds (with padding gap at bottom like straight boundaries)
+              const clippedPdf = clipLineToBounds(x1Pdf, y1Pdf, x2Pdf, y2Pdf, 0, 0, contentWidth, contentHeight - contentPadding)
+              
+              if (!clippedPdf.visible) return null
+              
+              // Draw diagonal line as solid line using Svg
               return (
-                <View
-                  key={`shared-sloped-${i}`}
+                <Svg
+                  key={`shared-sloped-${idx}`}
                   style={{
                     position: 'absolute',
-                    left: 0,  // Position relative to inner container
+                    left: 0,
                     top: 0,
-                    width: contentWidth,  // Match inner container width
-                    height: contentHeight,  // Match inner container height (not barHeight!)
+                    width: contentWidth,
+                    height: contentHeight,
                   }}
                 >
+                  <Line
+                    x1={String(clippedPdf.x1)}
+                    y1={String(clippedPdf.y1)}
+                    x2={String(clippedPdf.x2)}
+                    y2={String(clippedPdf.y2)}
+                    stroke="#d1d5db"
+                    strokeWidth="1"
+                  />
+                </Svg>
+              )
+            } else {
+              // Mixed types: one straight, one miter (same logic as app)
+              const SIGNIFICANT_MITER_DEG = 8.0
+              const diagonalOffset = 12
+              
+              const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev >= SIGNIFICANT_MITER_DEG
+              const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev >= SIGNIFICANT_MITER_DEG
+              
+              // Show sloped if either side has a significant miter
+              // BUT: if left is straight and right is miter, show straight (unless it's the last boundary)
+              if (leftIsMiter) {
+                // Left end is miter - show sloped marker
+                // ownerSide is always 'left' in this branch
+                
+                // Calculate diagonal endpoints
+                let x1App, y1App, x2App, y2App
+                x1App = xSnapped - diagonalOffset + 0.5
+                y1App = 0.5
+                x2App = xSnapped + 0.5
+                y2App = appHeight - 0.5
+                
+                // Clip to app's bounds
+                const clipped = clipLineToBounds(x1App, y1App, x2App, y2App, 0, 0, appWidth, appHeight)
+                
+                if (!clipped.visible) return null
+                
+                // Scale to PDF coordinates
+                const x1Pdf = clipped.x1 * widthScale
+                const y1Pdf = clipped.y1 * heightScale
+                const x2Pdf = clipped.x2 * widthScale
+                const y2Pdf = clipped.y2 * heightScale
+                
+                // Clip to content area bounds (with padding gap at bottom like straight boundaries)
+                const clippedPdf = clipLineToBounds(x1Pdf, y1Pdf, x2Pdf, y2Pdf, 0, 0, contentWidth, contentHeight - contentPadding)
+                
+                if (!clippedPdf.visible) return null
+                
+                // Draw diagonal line as solid line using Svg
+                return (
                   <Svg
+                    key={`shared-sloped-${idx}`}
                     style={{
                       position: 'absolute',
                       left: 0,
                       top: 0,
-                      width: contentWidth,  // Match inner container width
-                      height: contentHeight,  // Match inner container height (not barHeight!)
+                      width: contentWidth,
+                      height: contentHeight,
                     }}
                   >
                     <Line
-                      x1={String(x1Final)}
-                      y1={String(y1Final)}
-                      x2={String(x2Final)}
-                      y2={String(y2Final)}
+                      x1={String(clippedPdf.x1)}
+                      y1={String(clippedPdf.y1)}
+                      x2={String(clippedPdf.x2)}
+                      y2={String(clippedPdf.y2)}
                       stroke="#d1d5db"
-                      strokeWidth={1}
+                      strokeWidth="1"
                     />
                   </Svg>
-                </View>
-              )
+                )
+              } else if (rightIsMiter && sb.rightPartIdx === lastPartIdx) {
+                // Right start is miter and it's the last internal boundary - show sloped
+                const ownerSide: 'left' | 'right' = 'right'
+                
+                // Calculate diagonal endpoints
+                let x1App, y1App, x2App, y2App
+                // ownerSide is always 'right' in this branch
+                x1App = xSnapped + 0.5
+                y1App = 0.5
+                x2App = xSnapped + diagonalOffset + 0.5
+                y2App = appHeight - 0.5
+                
+                // Clip to app's bounds
+                const clipped = clipLineToBounds(x1App, y1App, x2App, y2App, 0, 0, appWidth, appHeight)
+                
+                if (!clipped.visible) return null
+                
+                // Scale to PDF coordinates
+                const x1Pdf = clipped.x1 * widthScale
+                const y1Pdf = clipped.y1 * heightScale
+                const x2Pdf = clipped.x2 * widthScale
+                const y2Pdf = clipped.y2 * heightScale
+                
+                // Clip to content area bounds (with padding gap at bottom like straight boundaries)
+                const clippedPdf = clipLineToBounds(x1Pdf, y1Pdf, x2Pdf, y2Pdf, 0, 0, contentWidth, contentHeight - contentPadding)
+                
+                if (!clippedPdf.visible) return null
+                
+                // Draw diagonal line as solid line using Svg
+                return (
+                  <Svg
+                    key={`shared-sloped-${idx}`}
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      width: contentWidth,
+                      height: contentHeight,
+                    }}
+                  >
+                    <Line
+                      x1={String(clippedPdf.x1)}
+                      y1={String(clippedPdf.y1)}
+                      x2={String(clippedPdf.x2)}
+                      y2={String(clippedPdf.y2)}
+                      stroke="#d1d5db"
+                      strokeWidth="1"
+                    />
+                  </Svg>
+                )
+              } else {
+                // Show as straight
+                const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
+                
+                return (
+                  <View
+                    key={`shared-boundary-${idx}`}
+                    style={{
+                      position: 'absolute',
+                      left: clampedX,
+                      top: 0,
+                      width: 1,
+                      height: contentHeight - contentPadding,
+                      backgroundColor: '#d1d5db',
+                    }}
+                  />
+                )
+              }
             }
-            
-            return null
           })}
           
-          {/* Waste area - white like app */}
-          {wasteWidth > 0 && (
-            <View
-              style={{
-                position: 'absolute',
-                left: exactPartsEndPx,
-                top: 0,
-                width: Math.max(0, Math.min(Math.floor(wasteWidth), contentWidth - exactPartsEndPx)),
-                height: contentHeight,
-                backgroundColor: '#ffffff',
-              }}
-            />
-          )}
+          {/* Waste area */}
+          {wasteWidth > 0 && (() => {
+            const wasteStartX = exactPartsEndPx * widthScale
+            const wasteWidthScaled = wasteWidth * widthScale
+            
+            // CRITICAL FIX: Add small gap (1-2px) after boundary line so it's visible
+            // The boundary line is at exactPartsEndPx, so waste should start slightly after it
+            const boundaryGap = 1.5  // Small gap to make boundary line visible
+            const wasteStartWithGap = wasteStartX + boundaryGap
+            
+            // CRITICAL FIX: Clamp waste area to content bounds with padding on all sides
+            // Match top/left padding by ensuring right/bottom edges don't reach the border
+            const maxRight = contentWidth - contentPadding  // Leave padding on right
+            const clampedWasteStart = Math.max(0, Math.min(wasteStartWithGap, maxRight))
+            const clampedWasteEnd = Math.max(0, Math.min(wasteStartX + wasteWidthScaled, maxRight))
+            const clampedWasteWidth = Math.max(0, clampedWasteEnd - clampedWasteStart)
+            const clampedWasteHeight = contentHeight - contentPadding  // Leave padding on bottom
+            
+            return (
+              <View
+                style={{
+                  position: 'absolute',
+                  left: clampedWasteStart,
+                  top: 0,
+                  width: clampedWasteWidth,
+                  height: clampedWasteHeight,
+                  backgroundColor: '#ffffff',
+                }}
+              />
+            )
+          })()}
         </View>
-        
-        {/* Render borders as separate overlay elements - guaranteed to be on top */}
-        {/* Top border */}
-        <View style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: totalWidth,
-          height: 1,
-          backgroundColor: '#d1d5db',
-        }} />
-        
-        {/* Bottom border */}
-        <View style={{
-          position: 'absolute',
-          left: 0,
-          top: barHeight - 1,
-          width: totalWidth,
-          height: 1,
-          backgroundColor: '#d1d5db',
-        }} />
-        
-        {/* Left border */}
-        <View style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: 1,
-          height: barHeight,
-          backgroundColor: '#d1d5db',
-        }} />
-        
-        {/* Right border */}
-        <View style={{
-          position: 'absolute',
-          left: totalWidth - 1,
-          top: 0,
-          width: 1,
-          height: barHeight,
-          backgroundColor: '#d1d5db',
-        }} />
       </View>
       
       {/* Labels */}
@@ -880,92 +1239,45 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
 
   return (
     <Document>
+      {/* Cover Page */}
       <Page size="A4" style={styles.page}>
-        {/* Section 1: BOM Summary */}
-        <Text style={styles.sectionTitle}>Section 1: BOM Summary</Text>
+        <Text style={styles.title}>Nesting Report</Text>
+        <Text style={{ marginBottom: 10 }}>File: {filename}</Text>
         
+        {/* Summary Table */}
         <View style={styles.table}>
-          {/* Table Header */}
           <View style={[styles.tableRow, styles.tableHeader]}>
-            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '25%' }]}>Profile Type</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '15%' }]}>Bar Stock Length</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Amount of Bars</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Tonnage (tonnes)</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Number of Cuts</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Total Waste Tonnage</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Total Waste in M</Text>
-            <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '12%' }]}>Total Waste %</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Metric</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Value</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Metric</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Value</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Metric</Text>
           </View>
-          
-          {/* Table Rows */}
-          {nestingReport.profiles.map((profile, profileIdx) => {
-            const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
-            let weightPerMeter = 0
-            if (profileData && profile.total_length > 0) {
-              const totalLengthM = profile.total_length / 1000.0
-              weightPerMeter = profileData.total_weight / totalLengthM
-            }
-            
-            const stockLengthEntries = Object.entries(profile.stock_lengths_used)
-              .filter(([_, barCount]) => barCount > 0)
-            
-            return stockLengthEntries.map(([stockLengthStr, barCount], stockIdx) => {
-              const stockLength = parseFloat(stockLengthStr)
-              const stockLengthM = stockLength / 1000.0
-              const tonnage = (weightPerMeter * stockLengthM * barCount) / 1000.0
-              
-              const patternsForThisStock = profile.cutting_patterns.filter(
-                p => Math.abs(p.stock_length - stockLength) < 0.01
-              )
-              
-              const totalCuts = patternsForThisStock.reduce((sum, pattern) => {
-                return sum + Math.max(0, pattern.parts.length - 1)
-              }, 0)
-              
-              const totalWasteMm = patternsForThisStock.reduce((sum, pattern) => {
-                return sum + (pattern.waste || 0)
-              }, 0)
-              
-              const totalWasteM = totalWasteMm / 1000.0
-              const wasteTonnage = weightPerMeter > 0 && totalWasteMm > 0
-                ? (totalWasteM * weightPerMeter) / 1000.0
-                : 0
-              
-              const wasteForThisStock = patternsForThisStock.length > 0
-                ? patternsForThisStock.reduce((sum, p) => sum + p.waste_percentage, 0) / patternsForThisStock.length
-                : profile.total_waste_percentage
-              
-              return (
-                <View key={`${profileIdx}-${stockIdx}`} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { width: '25%' }]}>{profile.profile_name}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>{formatLength(stockLength)}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>{barCount}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-                    {tonnage > 0 ? tonnage.toFixed(3) : 'N/A'}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>{totalCuts}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-                    {wasteTonnage > 0 ? wasteTonnage.toFixed(3) : '0.000'}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-                    {totalWasteM > 0 ? totalWasteM.toFixed(2) : '0.00'}
-                  </Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-                    {wasteForThisStock.toFixed(2)}%
-                  </Text>
-                </View>
-              )
-            })
-          })}
-          
-          {/* Table Footer */}
-          <View style={[styles.tableRow, { backgroundColor: '#f3f4f6', fontWeight: 'bold' }]}>
-            <Text style={[styles.tableCell, { width: '25%', fontWeight: 'bold' }]}>Total</Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>-</Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
+          <View style={styles.tableRow}>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Profiles</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+              {nestingReport.summary.total_profiles}
+            </Text>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Parts</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+              {nestingReport.summary.total_parts}
+            </Text>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Stock Bars</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
               {nestingReport.summary.total_stock_bars}
             </Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
+          </View>
+          <View style={styles.tableRow}>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Waste</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+              {formatLength(nestingReport.summary.total_waste)}
+            </Text>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Avg Waste %</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+              {nestingReport.summary.average_waste_percentage.toFixed(2)}%
+            </Text>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Tonnage</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
               {nestingReport.profiles.reduce((total, profile) => {
                 const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
                 if (!profileData || profile.total_length === 0) return total
@@ -979,14 +1291,18 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
                 return total + profileTonnage
               }, 0).toFixed(3)}
             </Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
+          </View>
+          <View style={styles.tableRow}>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Total Cuts</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
               {nestingReport.profiles.reduce((total, profile) => {
                 return total + profile.cutting_patterns.reduce((sum, pattern) => {
                   return sum + Math.max(0, pattern.parts.length - 1)
                 }, 0)
               }, 0)}
             </Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
+            <Text style={[styles.tableCell, { width: '20%' }]}>Waste Tonnage</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
               {nestingReport.profiles.reduce((total, profile) => {
                 const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
                 if (!profileData || profile.total_length === 0) return total
@@ -1000,41 +1316,38 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
                 return total + profileWasteTonnage
               }, 0).toFixed(3)}
             </Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-              {nestingReport.profiles.reduce((total, profile) => {
-                const profileWasteM = profile.cutting_patterns.reduce((sum, pattern) => {
-                  return sum + ((pattern.waste || 0) / 1000.0)
-                }, 0)
-                return total + profileWasteM
-              }, 0).toFixed(2)}
-            </Text>
-            <Text style={[styles.tableCell, styles.textRight, { width: '12%' }]}>
-              {nestingReport.summary.average_waste_percentage.toFixed(2)}%
+            <Text style={[styles.tableCell, { width: '20%' }]}>Material Efficiency</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+              {(100 - nestingReport.summary.average_waste_percentage).toFixed(2)}%
             </Text>
           </View>
         </View>
 
         {/* Error Parts Table */}
         {errorPartsList.length > 0 && (
-          <>
+          <View style={{ marginTop: 20 }}>
             <Text style={styles.sectionTitle}>Error Parts</Text>
             <View style={styles.table}>
               <View style={[styles.tableRow, styles.tableHeader]}>
-                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '30%' }]}>Profile Type</Text>
-                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '30%' }]}>Part Name</Text>
-                <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '20%' }]}>Cut Length (mm)</Text>
-                <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '20%' }]}>Quantity</Text>
+                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '30%' }]}>Profile</Text>
+                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '40%' }]}>Part Name</Text>
+                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '15%' }]}>Length</Text>
+                <Text style={[styles.tableCell, styles.tableCellHeader, { width: '15%' }]}>Quantity</Text>
               </View>
               {errorPartsList.map((part, idx) => (
                 <View key={`error-${idx}`} style={styles.tableRow}>
                   <Text style={[styles.tableCell, { width: '30%' }]}>{part.profile_name}</Text>
-                  <Text style={[styles.tableCell, { width: '30%' }]}>{part.reference}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>{Math.round(part.length)}</Text>
-                  <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>{part.quantity}</Text>
+                  <Text style={[styles.tableCell, { width: '40%' }]}>{part.reference}</Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>
+                    {formatLength(part.length)}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>
+                    {part.quantity}
+                  </Text>
                 </View>
               ))}
             </View>
-          </>
+          </View>
         )}
       </Page>
 
@@ -1062,24 +1375,25 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
               <View style={styles.table}>
                 <View style={[styles.tableRow, styles.tableHeader]}>
                   <Text style={[styles.tableCell, styles.tableCellHeader, { width: '10%' }]}>Number</Text>
-                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '30%' }]}>Profile Name</Text>
-                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '30%' }]}>Part Name</Text>
-                  <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '15%' }]}>Cut Length (mm)</Text>
-                  <Text style={[styles.tableCell, styles.tableCellHeader, styles.textRight, { width: '15%' }]}>Quantity</Text>
+                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '25%' }]}>Profile Name</Text>
+                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '25%' }]}>Part Name</Text>
+                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Cut Length (mm)</Text>
+                  <Text style={[styles.tableCell, styles.tableCellHeader, { width: '20%' }]}>Quantity</Text>
                 </View>
                 {(() => {
+                  // Group parts by name and length
                   const partGroups = new Map<string, { name: string, length: number, count: number }>()
                   
                   pattern.parts.forEach((part) => {
                     const partData = part?.part || {}
                     const partName = partData.reference || partData.element_name || 'Unknown'
                     const partLength = part?.length || 0
+                    const key = `${partName}|${partLength.toFixed(2)}`
                     
-                    if (partGroups.has(partName)) {
-                      const existing = partGroups.get(partName)!
-                      existing.count += 1
+                    if (partGroups.has(key)) {
+                      partGroups.get(key)!.count += 1
                     } else {
-                      partGroups.set(partName, {
+                      partGroups.set(key, {
                         name: partName,
                         length: partLength,
                         count: 1
@@ -1087,17 +1401,26 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
                     }
                   })
                   
-                  const sortedGroups = Array.from(partGroups.values()).sort((a, b) => {
-                    return b.length - a.length
-                  })
+                  // Sort by length (descending)
+                  const sortedGroups = Array.from(partGroups.values()).sort((a, b) => b.length - a.length)
                   
                   return sortedGroups.map((group, idx) => (
                     <View key={idx} style={styles.tableRow}>
-                      <Text style={[styles.tableCell, { width: '10%' }]}>{idx + 1}</Text>
-                      <Text style={[styles.tableCell, { width: '30%' }]}>{profile.profile_name}</Text>
-                      <Text style={[styles.tableCell, { width: '30%' }]}>{group.name}</Text>
-                      <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>{Math.round(group.length)}</Text>
-                      <Text style={[styles.tableCell, styles.textRight, { width: '15%' }]}>{group.count}</Text>
+                      <Text style={[styles.tableCell, styles.textRight, { width: '10%' }]}>
+                        {idx + 1}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: '25%' }]}>
+                        {profile.profile_name}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: '25%' }]}>
+                        {group.name}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+                        {Math.round(group.length)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.textRight, { width: '20%' }]}>
+                        {group.count}
+                      </Text>
                     </View>
                   ))
                 })()}
@@ -1109,4 +1432,3 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
     </Document>
   )
 }
-
