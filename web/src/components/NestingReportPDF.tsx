@@ -1351,6 +1351,184 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
         )}
       </Page>
 
+      {/* Section 1: BOM Summary */}
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Section 1: BOM Summary</Text>
+        
+        <View style={styles.table}>
+          {/* Header */}
+          <View style={[styles.tableRow, styles.tableHeader]}>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '15%', fontSize: 8 }]}>Profile Type</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '12%', fontSize: 8 }]}>Bar Stock Length</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '10%', fontSize: 8 }]}>Amount of Bars</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '12%', fontSize: 8 }]}>Tonnage (tonnes)</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '10%', fontSize: 8 }]}>Number of Cuts</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '12%', fontSize: 8 }]}>Total Waste Tonnage</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '12%', fontSize: 8 }]}>Total Waste in M</Text>
+            <Text style={[styles.tableCell, styles.tableCellHeader, { width: '15%', fontSize: 8 }]}>Total Waste %</Text>
+          </View>
+          
+          {/* Data Rows */}
+          {nestingReport.profiles.map((profile, profileIdx) => {
+            // Get profile data from report to calculate weight per meter
+            const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+            
+            // Calculate weight per meter (kg/m) from report data
+            let weightPerMeter = 0
+            if (profileData && profile.total_length > 0) {
+              const totalLengthM = profile.total_length / 1000.0  // Convert mm to meters
+              weightPerMeter = profileData.total_weight / totalLengthM  // kg per meter
+            }
+            
+            // Group by stock length for this profile
+            // Filter out entries with 0 bars - only show active bars
+            const stockLengthEntries = Object.entries(profile.stock_lengths_used)
+              .filter(([_, barCount]) => barCount > 0)
+            
+            return stockLengthEntries.map(([stockLengthStr, barCount], stockIdx) => {
+              const stockLength = parseFloat(stockLengthStr)  // in mm
+              const stockLengthM = stockLength / 1000.0  // Convert to meters
+              
+              // Calculate tonnage: (weight_per_meter_kg) * (stock_length_m) * (number_of_bars) / 1000
+              const tonnage = (weightPerMeter * stockLengthM * barCount) / 1000.0  // tonnes
+              
+              // Calculate number of cuts for this stock length
+              const patternsForThisStock = profile.cutting_patterns.filter(
+                p => Math.abs(p.stock_length - stockLength) < 0.01
+              )
+              
+              // Number of cuts = sum of (parts per bar - 1) for each bar
+              const totalCuts = patternsForThisStock.reduce((sum, pattern) => {
+                return sum + Math.max(0, pattern.parts.length - 1)
+              }, 0)
+              
+              // Calculate total waste for this stock length
+              const totalWasteMm = patternsForThisStock.reduce((sum, pattern) => {
+                return sum + (pattern.waste || 0)
+              }, 0)
+              
+              // Calculate waste in meters
+              const totalWasteM = totalWasteMm / 1000.0
+              
+              // Calculate waste tonnage
+              const wasteTonnage = weightPerMeter > 0 && totalWasteMm > 0
+                ? (totalWasteM * weightPerMeter) / 1000.0
+                : 0
+              
+              // Get waste percentage for this stock length
+              const wasteForThisStock = patternsForThisStock.length > 0
+                ? patternsForThisStock.reduce((sum, p) => sum + p.waste_percentage, 0) / patternsForThisStock.length
+                : profile.total_waste_percentage
+              
+              return (
+                <View 
+                  key={`${profileIdx}-${stockIdx}`} 
+                  style={[styles.tableRow, { backgroundColor: profileIdx % 2 === 0 ? '#ffffff' : '#f9fafb' }]}
+                >
+                  <Text style={[styles.tableCell, { width: '15%', fontSize: 8 }]}>
+                    {profile.profile_name}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8 }]}>
+                    {formatLength(stockLength)}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '10%', fontSize: 8 }]}>
+                    {barCount}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8 }]}>
+                    {tonnage > 0 ? tonnage.toFixed(3) : 'N/A'}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '10%', fontSize: 8 }]}>
+                    {totalCuts}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8 }]}>
+                    {wasteTonnage > 0 ? wasteTonnage.toFixed(3) : '0.000'}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8 }]}>
+                    {totalWasteM > 0 ? totalWasteM.toFixed(2) : '0.00'}
+                  </Text>
+                  <Text style={[
+                    styles.tableCell, 
+                    styles.textRight, 
+                    { 
+                      width: '15%', 
+                      fontSize: 8,
+                      color: wasteForThisStock > 5 ? '#dc2626' : '#16a34a',
+                      fontWeight: wasteForThisStock > 5 ? 'bold' : 'normal'
+                    }
+                  ]}>
+                    {wasteForThisStock.toFixed(2)}%
+                  </Text>
+                </View>
+              )
+            })
+          })}
+          
+          {/* Footer - Totals */}
+          <View style={[styles.tableRow, { backgroundColor: '#f3f4f6', fontWeight: 'bold' }]}>
+            <Text style={[styles.tableCell, { width: '15%', fontSize: 8, fontWeight: 'bold' }]}>Total</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8, fontWeight: 'bold' }]}>-</Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '10%', fontSize: 8, fontWeight: 'bold' }]}>
+              {nestingReport.summary.total_stock_bars}
+            </Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8, fontWeight: 'bold' }]}>
+              {nestingReport.profiles.reduce((total, profile) => {
+                const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+                if (!profileData || profile.total_length === 0) return total
+                
+                const weightPerMeter = profileData.total_weight / (profile.total_length / 1000.0)
+                const profileTonnage = Object.entries(profile.stock_lengths_used).reduce((sum, [stockLengthStr, barCount]) => {
+                  const stockLengthM = parseFloat(stockLengthStr) / 1000.0
+                  return sum + (weightPerMeter * stockLengthM * barCount) / 1000.0
+                }, 0)
+                
+                return total + profileTonnage
+              }, 0).toFixed(3)}
+            </Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '10%', fontSize: 8, fontWeight: 'bold' }]}>
+              {nestingReport.profiles.reduce((total, profile) => {
+                return total + profile.cutting_patterns.reduce((sum, pattern) => {
+                  return sum + Math.max(0, pattern.parts.length - 1)
+                }, 0)
+              }, 0)}
+            </Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8, fontWeight: 'bold' }]}>
+              {nestingReport.profiles.reduce((total, profile) => {
+                const profileData = report?.profiles.find(p => p.profile_name === profile.profile_name)
+                if (!profileData || profile.total_length === 0) return total
+                
+                const weightPerMeter = profileData.total_weight / (profile.total_length / 1000.0)
+                const profileWasteTonnage = profile.cutting_patterns.reduce((sum, pattern) => {
+                  const wasteM = (pattern.waste || 0) / 1000.0
+                  return sum + (wasteM * weightPerMeter) / 1000.0
+                }, 0)
+                
+                return total + profileWasteTonnage
+              }, 0).toFixed(3)}
+            </Text>
+            <Text style={[styles.tableCell, styles.textRight, { width: '12%', fontSize: 8, fontWeight: 'bold' }]}>
+              {nestingReport.profiles.reduce((total, profile) => {
+                const profileWasteM = profile.cutting_patterns.reduce((sum, pattern) => {
+                  return sum + ((pattern.waste || 0) / 1000.0)
+                }, 0)
+                return total + profileWasteM
+              }, 0).toFixed(2)}
+            </Text>
+            <Text style={[
+              styles.tableCell, 
+              styles.textRight, 
+              { 
+                width: '15%', 
+                fontSize: 8,
+                fontWeight: 'bold',
+                color: nestingReport.summary.average_waste_percentage > 5 ? '#dc2626' : '#16a34a'
+              }
+            ]}>
+              {nestingReport.summary.average_waste_percentage.toFixed(2)}%
+            </Text>
+          </View>
+        </View>
+      </Page>
+
       {/* Section 2: Cutting Patterns - Each profile on separate pages */}
       {nestingReport.profiles.map((profile, profileIdx) => (
         <Page key={profileIdx} size="A4" style={styles.page}>
