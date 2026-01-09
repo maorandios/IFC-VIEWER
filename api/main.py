@@ -2676,6 +2676,7 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 total_parts_length = 0.0  # Tracks sum of individual part lengths (for waste calculation)
                 cut_position = 0.0
                 parts_to_remove = []
+                tolerance_mm = 0.1  # Minimal tolerance for floating point errors only - define early for use in loops
                 pending_complementary_pair = None  # Track a complementary pair that needs to be paired in this pattern
                 stock_to_use = best_stock  # Initialize stock_to_use to best_stock (will be overridden for complementary pairs if needed)
                 
@@ -2690,6 +2691,12 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 # Only consider valid parts that fit in best_stock
                 if len(valid_parts_for_this_stock) >= 2:
                     for i, part1 in enumerate(valid_parts_for_this_stock):
+                        # CRITICAL CHECK: Ensure current_length hasn't already exceeded best_stock
+                        # This prevents trying to add more pairs when current_length is already too high
+                        if current_length > best_stock + tolerance_mm:
+                            nesting_log(f"[NESTING] BREAK OUTER LOOP: current_length {current_length:.1f}mm already exceeds stock {best_stock:.0f}mm - stopping complementary pair search")
+                            break  # Break out of outer loop to prevent adding more pairs
+                        
                         if part1 in parts_to_remove:
                             continue
                         
@@ -2996,6 +3003,12 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                         nesting_log(f"[NESTING] Pattern is empty - pairing complementary parts in {best_stock_for_pair:.1f}mm stock")
                                     elif current_length + combined_length <= best_stock + tolerance_mm:
                                         # Pair fits in current pattern - allow exact fit (0mm margin for maximum optimization)
+                                        # BUT: Ensure that after adding, current_length won't exceed best_stock
+                                        # Use strict check: current_length + combined_length must be <= best_stock (not best_stock + tolerance)
+                                        if current_length + combined_length > best_stock:
+                                            # Even with tolerance, this would exceed stock - reject it
+                                            nesting_log(f"[NESTING] REJECTING pair: current_length {current_length:.1f}mm + combined_length {combined_length:.1f}mm = {current_length + combined_length:.1f}mm > {best_stock:.0f}mm (exceeds stock)")
+                                            continue  # Skip this pair
                                         nesting_log(f"[NESTING] Complementary pair fits in current pattern, pairing them")
                                     else:
                                         # Pair doesn't fit in current pattern - must start new pattern to pair them
@@ -3054,7 +3067,30 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     # combined_length already accounts for: length1 + length2 - shared_linear_slopes_length
                                     current_length = length_before_pair + combined_length
                                     
-                                    # IMMEDIATE CHECK: If current_length exceeds best_stock, reject immediately
+                                    # ABSOLUTE STRICT CHECK: current_length must NEVER exceed best_stock
+                                    # Use a very small epsilon to account for floating point precision, but be very strict
+                                    epsilon = 0.01  # Very small epsilon for floating point comparison
+                                    if current_length > best_stock + epsilon:
+                                        # This should never happen if validation is correct, but catch it just in case
+                                        nesting_log(f"[NESTING] ABSOLUTE REJECTION: current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm (epsilon: {epsilon:.2f}mm) - removing pair")
+                                        # Remove the parts we just added
+                                        pattern_parts = [pp for pp in pattern_parts if pp.get("part") not in [part1, part2]]
+                                        current_length = length_before_pair
+                                        cut_position = length_before_pair  # Reset cut_position too
+                                        continue  # Skip this pair
+                                    
+                                    # STRICT CHECK: current_length must NEVER exceed best_stock (tolerance only for floating point rounding)
+                                    # If it does, reject immediately
+                                    if current_length > best_stock:
+                                        # This should never happen if validation is correct, but catch it just in case
+                                        nesting_log(f"[NESTING] CRITICAL REJECTION: current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm (no tolerance) - removing pair")
+                                        # Remove the parts we just added
+                                        pattern_parts = [pp for pp in pattern_parts if pp.get("part") not in [part1, part2]]
+                                        current_length = length_before_pair
+                                        cut_position = length_before_pair  # Reset cut_position too
+                                        continue  # Skip this pair
+                                    
+                                    # IMMEDIATE CHECK: If current_length exceeds best_stock even with tolerance, reject
                                     # This should never happen if validation is correct, but catch it just in case
                                     if current_length > best_stock + tolerance_mm:
                                         nesting_log(f"[NESTING] IMMEDIATE REJECTION: current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm immediately after calculation - removing pair")
@@ -3086,6 +3122,13 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     
                                     parts_to_remove.extend([part1, part2])
                                     nesting_log(f"[NESTING] Successfully paired complementary slopes - waste saved by using complementary cuts")
+                                    
+                                    # CRITICAL CHECK: After adding pair, verify current_length is still valid
+                                    # If it exceeds best_stock, break out of outer loop to prevent adding more pairs
+                                    if current_length > best_stock + tolerance_mm:
+                                        nesting_log(f"[NESTING] BREAK OUTER LOOP: After adding pair, current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm - stopping complementary pair search")
+                                        break  # Break out of inner loop, and the outer loop will also stop due to the check at the beginning
+                                    
                                     break  # Found a pair, move to next part
                                 else:
                                     nesting_log(f"[NESTING] Complementary parts don't fit in any stock length (combined_length={combined_length:.1f}mm, max_stock={max(stock_lengths_list):.1f}mm)")
