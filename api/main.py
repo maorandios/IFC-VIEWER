@@ -2693,23 +2693,43 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     pairing_type = "start_end_reversed"  # Indicates parts should be placed in reverse order
                             
                             # Case 2: part1 end slope with part2 start slope
-                            # FIXED: end_start pairing CAN be complementary ONLY if angles are opposite signs
+                            # FIXED: end_start pairing - be more conservative about complementary detection
                             # When placing [part1][part2] on stock bar:
                             # - part1's END slope meets part2's START slope at the JUNCTION
-                            # - These cuts CAN share material ONLY if angles are opposite (e.g., +76° and -76°)
-                            # - Same-sign angles (e.g., +76° and +76°) are NOT complementary - they cut in the same direction
+                            # - Opposite-sign angles are ALWAYS complementary (cuts from opposite sides)
+                            # - Same-sign angles MIGHT be complementary, but we need to verify they actually share material
+                            # - To be safe, only treat as complementary if angles are opposite OR if combined length fits
                             if not is_complementary and part1_end_slope and part2_start_slope and part1_end_angle is not None and part2_start_angle is not None:
                                 angle1_abs = abs(part1_end_angle)
                                 angle2_abs = abs(part2_start_angle)
                                 angle_diff = abs(angle1_abs - angle2_abs)
                                 
-                                # For end_start pairing, cuts meet at junction - can share material ONLY if opposite signs
-                                # Same-sign angles cut in the same direction and cannot share material
+                                # For end_start pairing, cuts meet at junction
                                 if angle_diff < 5.0 and angle1_abs > 1.0:  # Both have significant slopes
-                                    # Check if angles are complementary (opposite signs required)
+                                    # Check if angles are opposite signs (definitely complementary)
                                     if (part1_end_angle > 0 and part2_start_angle < 0) or (part1_end_angle < 0 and part2_start_angle > 0):
                                         is_complementary = True
                                         pairing_type = "end_start"
+                                    # For same-sign angles, we need to verify they're truly complementary
+                                    # by checking if they can actually share material (combined length fits)
+                                    elif part1_end_angle * part2_start_angle > 0:  # Same sign
+                                        # Same-sign angles: only treat as complementary if we can verify
+                                        # they share material. We'll do a preliminary check here.
+                                        # If the full length sum already exceeds stock, they're NOT complementary
+                                        length1 = part1["length"]
+                                        length2 = part2["length"]
+                                        full_sum = length1 + length2
+                                        
+                                        # Check if full sum fits in any stock - if not, they can't be complementary
+                                        fits_in_any_stock = any(full_sum <= stock_len for stock_len in stock_lengths_list)
+                                        
+                                        if fits_in_any_stock:
+                                            # They might be complementary - mark for verification later
+                                            # We'll verify by checking if shared material calculation makes sense
+                                            is_complementary = True
+                                            pairing_type = "end_start"
+                                        # If full sum doesn't fit, they're definitely NOT complementary
+                                        # (don't set is_complementary = True)
                             
                             # Case 2b: part1 end slope with part2 end slope (if angles are similar, can be paired by reversing one)
                             # This handles cases where both parts have end cuts that can be complementary
@@ -2884,6 +2904,33 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     # IMPORTANT: Do NOT adjust shared length to fit stock - use only geometric calculation
                                     combined_length = length1 + length2 - shared_linear_slopes_length
                                     
+                                    # CRITICAL VALIDATION: For same-sign angles in end_start pairing,
+                                    # verify that the shared material calculation is reasonable
+                                    # If combined_length is still too large, they're NOT truly complementary
+                                    pair_rejected = False
+                                    if pairing_type == "end_start":
+                                        part1_end_angle_check = part1.get("end_angle")
+                                        part2_start_angle_check = part2.get("start_angle")
+                                        # Check if same-sign angles
+                                        if part1_end_angle_check is not None and part2_start_angle_check is not None:
+                                            if part1_end_angle_check * part2_start_angle_check > 0:  # Same sign
+                                                # For same-sign angles, verify combined length is reasonable
+                                                # If combined length exceeds stock, they're NOT complementary
+                                                max_stock = max(stock_lengths_list)
+                                                if combined_length > max_stock:
+                                                    # Combined length exceeds stock - they're NOT complementary
+                                                    print(f"[NESTING] REJECTING same-sign end_start pair: combined_length {combined_length:.1f}mm exceeds max stock {max_stock:.1f}mm - treating as non-complementary")
+                                                    is_complementary = False
+                                                    pair_rejected = True
+                                                    # Set to full sum for non-complementary handling
+                                                    combined_length = length1 + length2  # Use full sum
+                                                    shared_linear_slopes_length = 0.0
+                                    
+                                    # Skip rest of complementary processing if pair was rejected
+                                    if pair_rejected:
+                                        # Skip to next part2 - don't process as complementary pair
+                                        continue
+                                    
                                     if combined_length < 0:
                                         # Safety: if shared length is larger than sum, cap it
                                         max_shared = min(length1, length2) * 0.5
@@ -2944,7 +2991,14 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                         stock_to_use = best_stock
                                     
                                     # Check if pair fits in current pattern
-                                    if current_length + combined_length <= stock_to_use:
+                                    # CRITICAL: Use strict check to prevent exceeding stock
+                                    # Add small tolerance only for floating point rounding
+                                    tolerance_for_fit = 0.1  # Minimal tolerance for rounding only
+                                    if current_length + combined_length <= stock_to_use + tolerance_for_fit:
+                                        # Additional strict check: must not exceed stock even with tolerance
+                                        if current_length + combined_length > stock_to_use:
+                                            print(f"[NESTING] REJECTING pair: {current_length:.1f}mm + {combined_length:.1f}mm = {current_length + combined_length:.1f}mm > {stock_to_use:.1f}mm")
+                                            continue
                                         # Pair fits - add it immediately
                                         print(f"[NESTING] Pair fits in stock bar ({stock_to_use:.1f}mm), adding immediately (current: {current_length:.1f}mm + combined: {combined_length:.1f}mm)")
                                         
@@ -3017,6 +3071,7 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                         
                                         current_length = length_before_pair + combined_length
                                         
+                                        # CRITICAL: Final validation - current_length must NEVER exceed stock
                                         if current_length > stock_to_use:
                                             print(f"[NESTING] ERROR: After adding pair, current_length {current_length:.1f}mm exceeds stock {stock_to_use:.1f}mm - removing pair")
                                             pattern_parts = [pp for pp in pattern_parts if pp.get("part") not in [part1, part2]]
@@ -3064,27 +3119,29 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                     # For non-complementary sloped parts, ensure we use full length
                     # (complementary pairs already handled their shared material in Step 1)
                     new_length = current_length + part_actual_length
-                    tolerance_mm = 0.1  # Minimal tolerance for floating point errors only
                     
                     # CRITICAL: For non-complementary sloped parts, they cannot share material
                     # So the total must be: current_length + part_actual_length <= stock
-                    # Add extra safety margin for non-complementary sloped parts to prevent exceeding stock
+                    # Use STRICT check with safety margin BEFORE adding the part
                     if part_has_slope:
                         # For sloped parts that are NOT complementary, be extra strict
                         # Account for potential cutting kerf or material needed for the slope
-                        # Use a slightly stricter check to prevent exceeding stock
                         safety_margin = 0.5  # Small safety margin for sloped cuts (kerf, etc.)
-                        if new_length > best_stock - safety_margin:
+                        max_allowed_length = best_stock - safety_margin
+                        
+                        # STRICT CHECK: Must not exceed even with safety margin
+                        if new_length > max_allowed_length:
                             # Part doesn't fit - stop adding parts to this pattern
                             part_id = part.get("product_id") or part.get("reference") or part.get("element_name") or "unknown"
                             print(
                                 f"[NESTING] Non-complementary sloped part {part_id} ({part['length']:.1f}mm) doesn't fit: "
                                 f"{current_length:.1f}mm + {part['length']:.1f}mm = {new_length:.1f}mm "
-                                f"> {best_stock:.0f}mm (with safety margin: {safety_margin:.1f}mm)"
+                                f"> {max_allowed_length:.1f}mm (stock: {best_stock:.0f}mm, safety margin: {safety_margin:.1f}mm)"
                             )
                             break
                     else:
                         # For non-sloped parts, use normal tolerance
+                        tolerance_mm = 0.1  # Minimal tolerance for floating point errors only
                         if new_length > best_stock + tolerance_mm:
                             # Part doesn't fit - stop adding parts to this pattern
                             part_id = part.get("product_id") or part.get("reference") or part.get("element_name") or "unknown"
@@ -3116,21 +3173,18 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                     part_id = part.get("product_id") or part.get("reference") or part.get("element_name") or "unknown"
                     print(f"[NESTING] Added part {part_id} ({part['length']:.1f}mm) to pattern - current_length: {current_length:.1f}mm / {best_stock:.0f}mm, parts in pattern: {len(pattern_parts)}")
                     
-                    # FINAL CHECK: Ensure current_length hasn't exceeded stock (safety check)
-                    # Use tolerance to allow exact fits (when current_length == best_stock)
-                    tolerance_mm_check = 0.1
-                    # For non-complementary sloped parts, be extra strict
-                    max_allowed = best_stock - (0.5 if part_has_slope else 0.0)
-                    if current_length > max_allowed + tolerance_mm_check:
+                    # FINAL STRICT CHECK: Ensure current_length hasn't exceeded stock
+                    # This is a safety net - should never trigger if checks above are correct
+                    if current_length > best_stock:
                         part_id = part.get("product_id") or part.get("reference") or part.get("element_name") or "unknown"
-                        print(f"[NESTING] ERROR: After adding part {part_id}, current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm (max_allowed: {max_allowed:.1f}mm) - removing part")
+                        print(f"[NESTING] ERROR: After adding part {part_id}, current_length {current_length:.1f}mm exceeds stock {best_stock:.0f}mm - removing part")
                         # Remove the part we just added
                         pattern_parts = [pp for pp in pattern_parts if pp.get("part") != part]
                         current_length -= part["length"]
                         if part in parts_to_remove:
                             parts_to_remove.remove(part)
                         break  # Stop adding more parts
-                    elif abs(current_length - best_stock) <= tolerance_mm_check:
+                    elif abs(current_length - best_stock) <= 0.1:
                         # Bar is exactly full (within tolerance) - stop adding more parts but keep this part
                         part_id = part.get("product_id") or part.get("reference") or part.get("element_name") or "unknown"
                         print(f"[NESTING] Bar is exactly full after adding part {part_id} - current_length: {current_length:.1f}mm == {best_stock:.0f}mm (within tolerance), stopping part filling")
