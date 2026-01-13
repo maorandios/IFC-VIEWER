@@ -775,6 +775,16 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   return lengthB - lengthA // Descending order (longest first)
                                 })
                                 
+                                // Debug: Log pattern.parts vs sortedParts
+                                console.log(`[NESTING_DEBUG] Pattern ${patternIdx} parts count:`, {
+                                  patternPartsLength: pattern.parts.length,
+                                  sortedPartsLength: sortedParts.length,
+                                  partNames: sortedParts.map((p, idx) => {
+                                    const partData = p?.part || {}
+                                    return `${idx}: ${partData.reference || partData.element_name || partData.product_id || 'Unknown'} (${p?.length || 0}mm)`
+                                  }).join(', ')
+                                })
+                                
                                 // Parts are flush (no gaps) in manufacturing mode
                                 let cumulativeX = 0
                                 const partPositions = sortedParts.map((part, partIdx) => {
@@ -782,6 +792,11 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   const xStart = cumulativeX
                                   const xEnd = cumulativeX + (lengthMm * pxPerMm)
                                   cumulativeX = xEnd
+                                  const partData = part?.part || {}
+                                  const partName = partData.reference || partData.element_name || partData.product_id || `b${partIdx + 1}`
+                                  if (partIdx === sortedParts.length - 1) {
+                                    console.log(`[NESTING_DEBUG] Last part in partPositions: idx=${partIdx}, name=${partName}, length=${lengthMm}mm, xEnd=${xEnd}`)
+                                  }
                                   return { part, xStart, xEnd, lengthMm }
                                 })
                                 
@@ -857,6 +872,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 const partEnds = partPositions.map(({ part }, partIdx) => {
                                   try {
                                     if (!part) {
+                                      console.error(`[NESTING_DEBUG] Part at index ${partIdx} is undefined in partPositions`)
                                       throw new Error(`Part at index ${partIdx} is undefined`)
                                     }
                                     
@@ -986,6 +1002,13 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       
                                       return { startCut, endCut }
                                     })
+                                
+                                // Debug: Verify array lengths match
+                                if (partPositions.length !== finalPartEnds.length) {
+                                  console.error(`[NESTING_DEBUG] Array length mismatch! partPositions.length=${partPositions.length}, finalPartEnds.length=${finalPartEnds.length}, partEnds.length=${partEnds.length}`)
+                                } else {
+                                  console.log(`[NESTING_DEBUG] Array lengths match: ${partPositions.length} parts`)
+                                }
                                 
                                 // C) Build boundary requests correctly (using deviation-normalized ends)
                                 interface SlopeRequest {
@@ -1295,6 +1318,16 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                     {partPositions.map(({ part, xStart, xEnd }, partIdx) => {
                                       // Safety check: skip if part or partEndInfo is missing
                                       if (!part || !finalPartEnds[partIdx]) {
+                                        const partName = part?.part?.reference || part?.part?.element_name || part?.part?.product_id || `b${partIdx + 1}`
+                                        console.warn(`[NESTING_DEBUG] Skipping part ${partIdx} (${partName}):`, {
+                                          hasPart: !!part,
+                                          hasPartEndInfo: !!finalPartEnds[partIdx],
+                                          partPositionsLength: partPositions.length,
+                                          finalPartEndsLength: finalPartEnds.length,
+                                          partEndsLength: partEnds.length,
+                                          partIdx,
+                                          partName
+                                        })
                                         return null
                                       }
                                       

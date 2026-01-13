@@ -44,6 +44,11 @@ yarn-error.log*
 build/
 *.tsbuildinfo
 
+# Large files
+*.rar
+*.zip
+*.7z
+
 
 
 
