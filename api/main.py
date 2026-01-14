@@ -3560,20 +3560,41 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         last_slope_info = slope_info
                 
                 # Update pattern_parts and current_length to validated values
-                print(f"[NESTING] VALIDATION: Completed validation - validated {len(validated_parts)}/{len(pattern_parts)} parts, validated_length={validated_length:.1f}mm", flush=True)
+                # Check if pattern has complementary pairs (we skip validated_length update for them)
+                has_complementary_pairs = any(pp.get("slope_info", {}).get("complementary_pair", False) for pp in pattern_parts)
+                
+                if has_complementary_pairs:
+                    print(f"[NESTING] VALIDATION: Completed validation - validated {len(validated_parts)}/{len(pattern_parts)} parts (complementary pairs - using current_length={current_length:.1f}mm)", flush=True)
+                else:
+                    print(f"[NESTING] VALIDATION: Completed validation - validated {len(validated_parts)}/{len(pattern_parts)} parts, validated_length={validated_length:.1f}mm", flush=True)
                 if len(validated_parts) < len(pattern_parts):
                     removed_count = len(pattern_parts) - len(validated_parts)
-                    print(f"[NESTING] VALIDATION: Removed {removed_count} part(s) that exceeded stock. Original length: {current_length:.1f}mm, Validated length: {validated_length:.1f}mm / {best_stock:.0f}mm", flush=True)
-                    pattern_parts = validated_parts
-                    current_length = validated_length
-                    # Recalculate total_parts_length for validated parts
-                    total_parts_length = sum(pp.get("length", 0) for pp in validated_parts)
+                    if has_complementary_pairs:
+                        # For complementary pairs, trust current_length (calculated with geometric formula)
+                        # Don't remove parts based on validated_length - it's inaccurate for complementary pairs
+                        print(f"[NESTING] VALIDATION: WARNING - Validation loop removed {removed_count} part(s), but trusting current_length={current_length:.1f}mm for complementary pairs (fits in {best_stock:.0f}mm stock)", flush=True)
+                        # Keep all parts and trust current_length
+                    else:
+                        print(f"[NESTING] VALIDATION: Removed {removed_count} part(s) that exceeded stock. Original length: {current_length:.1f}mm, Validated length: {validated_length:.1f}mm / {best_stock:.0f}mm", flush=True)
+                        pattern_parts = validated_parts
+                        current_length = validated_length
+                        # Recalculate total_parts_length for validated parts
+                        total_parts_length = sum(pp.get("length", 0) for pp in validated_parts)
                 elif abs(validated_length - current_length) > 1.0:
-                    # Lengths don't match - use validated length (more accurate)
-                    print(f"[NESTING] VALIDATION: Length mismatch detected - current_length: {current_length:.1f}mm, validated_length: {validated_length:.1f}mm (using validated)", flush=True)
-                    current_length = validated_length
+                    # Lengths don't match
+                    if has_complementary_pairs:
+                        # For complementary pairs, trust current_length (calculated with geometric formula)
+                        print(f"[NESTING] VALIDATION: Length mismatch detected but trusting current_length={current_length:.1f}mm for complementary pairs (validated_length={validated_length:.1f}mm is inaccurate)", flush=True)
+                        # Keep current_length as is
+                    else:
+                        # Regular patterns - use validated length (more accurate)
+                        print(f"[NESTING] VALIDATION: Length mismatch detected - current_length: {current_length:.1f}mm, validated_length: {validated_length:.1f}mm (using validated)", flush=True)
+                        current_length = validated_length
                 else:
-                    print(f"[NESTING] VALIDATION: All parts validated successfully - length matches: {validated_length:.1f}mm", flush=True)
+                    if has_complementary_pairs:
+                        print(f"[NESTING] VALIDATION: All parts validated successfully - trusting current_length={current_length:.1f}mm for complementary pairs", flush=True)
+                    else:
+                        print(f"[NESTING] VALIDATION: All parts validated successfully - length matches: {validated_length:.1f}mm", flush=True)
                 
                 # Calculate waste exactly: stock length minus actual material used (accounting for shared cuts)
                 # Use current_length (actual material used with shared cut overlap subtracted) for waste calculation
