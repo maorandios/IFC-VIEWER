@@ -7,7 +7,7 @@ from pathlib import Path
 import ifcopenshell
 import ifcopenshell.util.element
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
 import asyncio
 import re
@@ -3195,9 +3195,22 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         
                         # Determine if boundaries can share
                         can_share = False
-                        
-                        if not prev_end_has_slope and not curr_start_has_slope:
-                            # Both straight - can share
+
+                        def is_effectively_straight(has_slope: bool, angle: Optional[float]) -> bool:
+                            if not has_slope:
+                                return True
+                            if angle is None:
+                                return False
+                            abs_angle = abs(angle)
+                            # Treat near-straight as straight in either convention (0, 90, 180)
+                            return (
+                                abs(abs_angle - 90.0) <= 2.0
+                                or abs_angle <= 2.0
+                                or abs(abs_angle - 180.0) <= 2.0
+                            )
+
+                        if is_effectively_straight(prev_end_has_slope, prev_end_angle) and is_effectively_straight(curr_start_has_slope, curr_start_angle):
+                            # Both effectively straight - can share boundary
                             can_share = True
                         elif prev_end_has_slope and curr_start_has_slope:
                             # Both sloped - check if complementary
@@ -3305,6 +3318,19 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 
                 # Validate all parts fit in stock (individually)
                 invalid_parts = []
+                def is_effectively_straight(has_slope: bool, angle: Optional[float]) -> bool:
+                    if not has_slope:
+                        return True
+                    if angle is None:
+                        return False
+                    abs_angle = abs(angle)
+                    # Treat near-straight as straight in either convention (0, 90, 180)
+                    return (
+                        abs(abs_angle - 90.0) <= 2.0
+                        or abs_angle <= 2.0
+                        or abs(abs_angle - 180.0) <= 2.0
+                    )
+
                 for pp in pattern_parts:
                     part_length = pp.get("length", 0)
                     if part_length > best_stock:
@@ -3494,11 +3520,14 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         prev_end_has_slope = last_slope_info.get("end_has_slope", False)
                         curr_start_has_slope = slope_info.get("start_has_slope", False)
                         
-                        if prev_end_has_slope and curr_start_has_slope:
+                        prev_end_angle = last_slope_info.get("end_angle")
+                        curr_start_angle = slope_info.get("start_angle")
+
+                        if is_effectively_straight(prev_end_has_slope, prev_end_angle) and is_effectively_straight(curr_start_has_slope, curr_start_angle):
+                            kerf = 0.0  # Both effectively straight - can share boundary
+                        elif prev_end_has_slope and curr_start_has_slope:
                             # Both have slopes - check if they're complementary
-                            prev_end_angle = last_slope_info.get("end_angle", 0)
-                            curr_start_angle = slope_info.get("start_angle", 0)
-                            angle_diff = abs(prev_end_angle + curr_start_angle)  # Opposite signs = complementary
+                            angle_diff = abs((prev_end_angle or 0) + (curr_start_angle or 0))  # Opposite signs = complementary
                             if angle_diff <= 2.0:
                                 kerf = 0.0  # Can share boundary (complementary slopes)
                             else:
