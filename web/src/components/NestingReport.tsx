@@ -698,7 +698,24 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 const ANGLE_MATCH_TOL = 2.0 // Tolerance for matching angles (degrees) - used in boundary resolution
                                 const allowTwoSlopes = true // Allow parts to have 2 sloped ends
                                 const markerInset = 8 // Inset from part edge for end markers (px)
-                                const markerDiagonalOffset = 12 // Constant offset for diagonal markers (px)
+                                
+                                // Use actual cut angle to compute diagonal offset (in px)
+                                const degToRad = (deg: number) => (deg * Math.PI) / 180
+                                const clamp = (value: number, min: number, max: number) =>
+                                  Math.max(min, Math.min(max, value))
+                                
+                                const calcDiagOffset = (devDeg: number | null | undefined, partWidthPx: number) => {
+                                  if (!devDeg || devDeg <= 0) return 0
+                                  const raw = Math.tan(degToRad(devDeg)) * (barHeight - 1)
+                                  const maxAllowed = Math.max(2, Math.min(partWidthPx * 0.45, barHeight - 2))
+                                  return clamp(raw, 0, maxAllowed)
+                                }
+                                
+                                const calcBoundaryOffset = (devDeg: number | null | undefined) => {
+                                  if (!devDeg || devDeg <= 0) return 0
+                                  const raw = Math.tan(degToRad(devDeg)) * (barHeight - 1)
+                                  return clamp(raw, 0, barHeight - 2)
+                                }
                                 
                                 // A) Helper: Parse angle robustly
                                 const parseAngle = (value: any): number | null => {
@@ -1102,7 +1119,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 }
                                 
                                 const resolveBoundary = (boundary: Boundary): ResolvedBoundary => {
-                                  const xSnapped = Math.round(boundary.x)
+                                  // Use same snapping as part rectangles (Math.floor) to avoid gaps/misalignment
+                                  const xSnapped = Math.floor(boundary.x)
                                   
                                   // If no requests → STRAIGHT
                                   if (boundary.requests.length === 0) {
@@ -1224,6 +1242,33 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       partFlipStates[i] = true
                                     }
                                   }
+                                  
+                                  const getCanonicalFlip = (partEnd: { startCut: PartEnd; endCut: PartEnd }) => {
+                                    const startIsStraight = partEnd.startCut.type === 'straight'
+                                    const endIsStraight = partEnd.endCut.type === 'straight'
+                                    
+                                    if (startIsStraight && !endIsStraight) return false
+                                    if (!startIsStraight && endIsStraight) return true
+                                    return false
+                                  }
+                                  
+                                  const preferredFlipByName = new Map<string, boolean>()
+                                  const displayFlipStates = partPositions.map(({ part }, idx) => {
+                                    const partEnd = finalPartEnds[idx]
+                                    if (!partEnd) return false
+                                    
+                                    const partData = part?.part || {}
+                                    const partName = String(
+                                      partData.reference || partData.element_name || partData.product_id || `b${idx + 1}`
+                                    )
+                                    
+                                    if (!preferredFlipByName.has(partName)) {
+                                      preferredFlipByName.set(partName, getCanonicalFlip(partEnd))
+                                    }
+                                    
+                                    return preferredFlipByName.get(partName) || false
+                                  })
+                                  
                                 
                                 // Compute shared boundaries FIRST (before rendering parts)
                                 // This ensures we know which boundaries are shared when rendering individual markers
@@ -1240,21 +1285,25 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       continue
                                     }
                                     
-                                    // Use optimized flip states to get the actual geometry at boundaries
-                                    const leftEndType = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
-                                    const rightStartType = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
-                                    const leftDev = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
-                                    const rightDev = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
+                                    // Use display flip states so identical parts render the same geometry
+                                    const leftEndType = displayFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
+                                    const rightStartType = displayFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
+                                    const leftDev = displayFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
+                                    const rightDev = displayFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
                                     
                                     const boundaryX = Math.round(partPositions[rightPartIdx].xStart)
                                     const NEAR_STRAIGHT_THRESHOLD_FOR_SHARING = 1.0
+                                    
+                                    const leftPartName = partPositions[leftPartIdx]?.part?.part?.reference || `b${leftPartIdx + 1}`
+                                    const rightPartName = partPositions[rightPartIdx]?.part?.part?.reference || `b${rightPartIdx + 1}`
                                     
                                     let isShared = false
                                     if (leftEndType === 'straight' && rightStartType === 'straight') {
                                       isShared = true
                                     } else if (leftEndType === 'miter' && rightStartType === 'miter') {
                                       const devDiff = Math.abs(leftDev - rightDev)
-                                      isShared = devDiff <= ANGLE_MATCH_TOL
+                                      const samePart = leftPartName === rightPartName
+                                      isShared = devDiff <= ANGLE_MATCH_TOL || samePart
                                     } else {
                                       const bothNearStraight = 
                                         (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
@@ -1266,8 +1315,6 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       sharedBoundarySet.add(boundaryX)
                                       
                                       // Debug log for b34, b37, b38 boundaries
-                                      const leftPartName = partPositions[leftPartIdx]?.part?.part?.reference || `b${leftPartIdx + 1}`
-                                      const rightPartName = partPositions[rightPartIdx]?.part?.part?.reference || `b${rightPartIdx + 1}`
                                       if (leftPartName === 'b34' || leftPartName === 'b37' || leftPartName === 'b38' ||
                                           rightPartName === 'b34' || rightPartName === 'b37' || rightPartName === 'b38') {
                                         try {
@@ -1471,13 +1518,14 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           {/* Calculate polygon boundaries once and reuse for both polygon and markers */}
                                           {(() => {
                                             // Get cut types for this part (considering flip state)
-                                            const isFlipped = partFlipStates[partIdx]
+                                            const isFlipped = displayFlipStates[partIdx]
                                             const startType = isFlipped ? partEndInfo.endCut.type : partEndInfo.startCut.type
                                             const endType = isFlipped ? partEndInfo.startCut.type : partEndInfo.endCut.type
+                                            const startDev = isFlipped ? partEndInfo.endCut.deviation || 0 : partEndInfo.startCut.deviation || 0
+                                            const endDev = isFlipped ? partEndInfo.startCut.deviation || 0 : partEndInfo.endCut.deviation || 0
                                             
                                             // Use same constants as marker lines
                                             const markerInset = 8
-                                            const markerDiagonalOffset = 12
                                             
                                             // CRITICAL: The marker lines show the correct boundaries (vertical lines at cut positions)
                                             // The polygon must be clipped to these vertical marker line positions
@@ -1528,43 +1576,32 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               ? 1000  // Last part with 0 waste: extend to full stock bar width
                                               : endPx + 0.5  // Use endPx for other parts
                                             
-                                            // Create polygon that follows sloped boundaries when present
-                                            // For miter cuts, the polygon edge should follow the diagonal line
+                                            // Create polygon from this part's own geometry (consistent per part number)
                                             let points: string
                                             
-                                            // Check if boundaries are sloped and non-shared (they need diagonal edges)
-                                            const hasSlopedStart = startType === 'miter' && !startIsShared && partIdx > 0
-                                            const hasSlopedEnd = endType === 'miter' && !endIsShared && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
+                                            const hasSlopedStart = startType === 'miter' && startDev > 0
+                                            const hasSlopedEnd =
+                                              endType === 'miter' &&
+                                              endDev > 0 &&
+                                              (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
                                             
-                                            // For last part with waste and sloped end, use exact boundary position
                                             const actualRightX = (partIdx === lastPartIdx && pattern.waste > 0 && hasSlopedEnd)
-                                              ? exactPartsEndPx + 0.5  // Use exact boundary for sloped cuts
+                                              ? exactPartsEndPx + 0.5
                                               : polyRightX
                                             
-                                            if (hasSlopedStart && hasSlopedEnd) {
-                                              // Both boundaries are sloped: 6 points
-                                              // Top-left (diagonal start), top-right (diagonal end), bottom-right (diagonal end), bottom-left (diagonal start)
-                                              const topLeftX = polyLeftX
-                                              const topRightX = actualRightX - markerDiagonalOffset  // For sloped end, top is offset left
-                                              const bottomLeftX = polyLeftX + markerDiagonalOffset
-                                              const bottomRightX = actualRightX  // Bottom is at the boundary
-                                              points = `${topLeftX},0.5 ${topRightX},0.5 ${bottomRightX},${barHeight - 0.5} ${bottomLeftX},${barHeight - 0.5}`
-                                            } else if (hasSlopedStart) {
-                                              // Only start boundary is sloped: 5 points
-                                              // Top-left (diagonal start), top-right, bottom-right, bottom-left (diagonal start)
-                                              const topLeftX = polyLeftX
-                                              const bottomLeftX = polyLeftX + markerDiagonalOffset
-                                              points = `${topLeftX},0.5 ${actualRightX},0.5 ${actualRightX},${barHeight - 0.5} ${bottomLeftX},${barHeight - 0.5}`
-                                            } else if (hasSlopedEnd) {
-                                              // Only end boundary is sloped: 5 points
-                                              // Top-left, top-right (diagonal end), bottom-right (diagonal end), bottom-left
-                                              const topRightX = actualRightX - markerDiagonalOffset  // For sloped end, top is offset left
-                                              const bottomRightX = actualRightX  // Bottom is at the boundary
-                                              points = `${polyLeftX},0.5 ${topRightX},0.5 ${bottomRightX},${barHeight - 0.5} ${polyLeftX},${barHeight - 0.5}`
-                                            } else {
-                                              // Both boundaries are straight: 4 points (rectangle)
-                                              points = `${polyLeftX},0.5 ${actualRightX},0.5 ${actualRightX},${barHeight - 0.5} ${polyLeftX},${barHeight - 0.5}`
-                                            }
+                                            const startOffset = hasSlopedStart ? calcBoundaryOffset(startDev) : 0
+                                            const endOffset = hasSlopedEnd ? calcBoundaryOffset(endDev) : 0
+                                            
+                                            const clampX = (x: number) => Math.max(0, Math.min(1000, x))
+                                            const topLeftX = clampX(polyLeftX)
+                                            const bottomLeftX = clampX(polyLeftX + startOffset)
+                                            const topRightX = clampX(actualRightX - endOffset)
+                                            const bottomRightX = clampX(actualRightX)
+                                            
+                                            points = `${topLeftX},0.5 ${topRightX},0.5 ${bottomRightX},${barHeight - 0.5} ${bottomLeftX},${barHeight - 0.5}`
+                                            
+                                            const startMarkerOffset = startType === 'miter' ? calcBoundaryOffset(startDev) : 0
+                                            const endMarkerOffset = endType === 'miter' ? calcBoundaryOffset(endDev) : 0
                                             
                                             // Debug logging for polygon calculation (especially for part 2)
                                             if (partIdx === 1 || partName === 'b32') {
@@ -1590,12 +1627,13 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                             
                                             return (
                                               <>
-                                                {/* Gray background polygon - vertices match marker line positions exactly */}
                                                 <g clipPath={isLastPart ? `url(#${partClipId!})` : undefined}>
                                                   <polygon
                                                     points={points}
-                                                    fill="#f3f4f6"
-                                                    stroke="none"
+                                                    fill="none"
+                                                    stroke="#9ca3af"
+                                                    strokeWidth="1"
+                                                    strokeLinejoin="miter"
                                                     shapeRendering="crispEdges"
                                                   />
                                                 </g>
@@ -1614,9 +1652,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                         <line
                                                           x1={polyLeftX}
                                                           y1="0.5"
-                                                          x2={polyLeftX + markerDiagonalOffset}
+                                                          x2={polyLeftX + startMarkerOffset}
                                                           y2={barHeight - 0.5}
-                                                          stroke="#d1d5db"
+                                                          stroke="#9ca3af"
                                                           strokeWidth="1"
                                                           strokeLinecap="butt"
                                                           shapeRendering="crispEdges"
@@ -1628,7 +1666,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                           y1="0.5"
                                                           x2={polyLeftX}
                                                           y2={barHeight - 0.5}
-                                                          stroke="#d1d5db"
+                                                          stroke="#9ca3af"
                                                           strokeWidth="1"
                                                           strokeLinecap="butt"
                                                           shapeRendering="crispEdges"
@@ -1655,11 +1693,11 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                           // Sloped end boundary - draw diagonal line
                                                           // Part is on the left of this boundary, so diagonal goes from (boundaryX - 12, 0) to (boundaryX, height)
                                                           <line
-                                                            x1={polyRightX - markerDiagonalOffset}
+                                                            x1={polyRightX - endMarkerOffset}
                                                             y1="0.5"
                                                             x2={polyRightX}
                                                             y2={barHeight - 0.5}
-                                                            stroke="#d1d5db"
+                                                            stroke="#9ca3af"
                                                             strokeWidth="1"
                                                             strokeLinecap="butt"
                                                             shapeRendering="crispEdges"
@@ -1671,7 +1709,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                             y1="0.5"
                                                             x2={polyRightX}
                                                             y2={barHeight - 0.5}
-                                                            stroke="#d1d5db"
+                                                            stroke="#9ca3af"
                                                             strokeWidth="1"
                                                             strokeLinecap="butt"
                                                             shapeRendering="crispEdges"
@@ -1691,20 +1729,22 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           {/* For miter cuts, draw diagonal line; for straight cuts, draw vertical line */}
                                           {isLastPart && exactPartsEndPx > 0 && (() => {
                                             // Get endType for the last part
-                                            const isFlipped = partFlipStates[partIdx]
+                                            const isFlipped = displayFlipStates[partIdx]
                                             const endType = isFlipped ? partEndInfo.startCut.type : partEndInfo.endCut.type
-                                            const markerDiagonalOffset = 12
+                                            const endDev = isFlipped ? partEndInfo.startCut.deviation || 0 : partEndInfo.endCut.deviation || 0
+                                            const partWidthPx = Math.max(1, exactPartsEndPx - xPx)
+                                            const endOffset = calcBoundaryOffset(endDev)
                                             
                                             if (endType === 'miter') {
                                               // Sloped end boundary - draw diagonal line
                                               return (
                                                 <line
                                                   key={`last-part-boundary-${partIdx}`}
-                                                  x1={exactPartsEndPx - markerDiagonalOffset + 0.5}
+                                                  x1={exactPartsEndPx - endOffset + 0.5}
                                                   y1="0.5"
                                                   x2={exactPartsEndPx + 0.5}
                                                   y2={barHeight - 0.5}
-                                                  stroke="#d1d5db"
+                                                  stroke="#9ca3af"
                                                   strokeWidth="1"
                                                   strokeLinecap="butt"
                                                   shapeRendering="crispEdges"
@@ -1719,7 +1759,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                   y1="0.5"
                                                   x2={exactPartsEndPx + 0.5}
                                                   y2={barHeight - 0.5}
-                                                  stroke="#d1d5db"
+                                                  stroke="#9ca3af"
                                                   strokeWidth="1"
                                                   strokeLinecap="butt"
                                                   shapeRendering="crispEdges"
@@ -1731,8 +1771,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       )
                                     })}
                                     
-                                    {/* Draw shared boundary markers - single marker at shared boundaries */}
-                                    {(() => {
+                                    {/* Shared boundary markers removed to avoid double-edges */}
+                                    {false && (() => {
                                       // Iterate through ALL internal boundaries between parts (not just boundaryMap)
                                       const sharedBoundaries: Array<{ x: number, leftPartIdx: number, rightPartIdx: number, leftEndType: string, rightStartType: string, leftDev: number, rightDev: number }> = []
                                       
@@ -1747,11 +1787,11 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           continue
                                         }
                                         
-                                        // Use optimized flip states to get the actual geometry at boundaries
-                                        const leftEndType = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
-                                        const rightStartType = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
-                                        const leftDev = partFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
-                                        const rightDev = partFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
+                                        // Use display flip states so identical parts render the same geometry
+                                        const leftEndType = displayFlipStates[leftPartIdx] ? leftPartEnd.startCut.type : leftPartEnd.endCut.type
+                                        const rightStartType = displayFlipStates[rightPartIdx] ? rightPartEnd.endCut.type : rightPartEnd.startCut.type
+                                        const leftDev = displayFlipStates[leftPartIdx] ? leftPartEnd.startCut.deviation || 0 : leftPartEnd.endCut.deviation || 0
+                                        const rightDev = displayFlipStates[rightPartIdx] ? rightPartEnd.endCut.deviation || 0 : rightPartEnd.startCut.deviation || 0
                                         
                                         // Boundary x position is the start of the right part
                                         // CRITICAL: Use the EXACT same calculation as the part rectangles to ensure alignment
@@ -1779,9 +1819,10 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           // Both straight = shared straight boundary
                                           isShared = true
                                         } else if (leftEndType === 'miter' && rightStartType === 'miter') {
-                                          // Both miter = check if complementary
+                                          // Both miter = check if complementary or same part geometry
                                           const devDiff = Math.abs(leftDev - rightDev)
-                                          isShared = devDiff <= ANGLE_MATCH_TOL // Complementary slopes
+                                          const samePart = leftPartName === rightPartName
+                                          isShared = devDiff <= ANGLE_MATCH_TOL || samePart
                                         } else {
                                           // Mixed types: share the boundary and show the miter marker (the actual cut geometry)
                                           // When parts are flush, they share a physical cut, so show a single marker
@@ -1856,19 +1897,31 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               y1="0.5"
                                               x2={xSnapped + 0.5}
                                               y2={barHeight - 0.5}
-                                              stroke="#d1d5db"
+                                              stroke="#9ca3af"
                                               strokeWidth="1"
                                               strokeLinecap="butt"
                                               shapeRendering="crispEdges"
+                                              vectorEffect="non-scaling-stroke"
                                             />
                                           )
                                         } else if (sb.leftEndType === 'miter' && sb.rightStartType === 'miter') {
                                           // Shared sloped boundary - determine direction from deviations
-                                          const diagonalOffset = 12
+                                          const leftWidthPx = Math.max(
+                                            1,
+                                            Math.floor(partPositions[sb.leftPartIdx].xEnd) -
+                                              (sb.leftPartIdx === 0 ? 0 : Math.floor(partPositions[sb.leftPartIdx].xStart))
+                                          )
+                                          const rightWidthPx = Math.max(
+                                            1,
+                                            Math.floor(partPositions[sb.rightPartIdx].xEnd) -
+                                              Math.floor(partPositions[sb.rightPartIdx].xStart)
+                                          )
                                           
-                                          // Find the resolved boundary to get ownerSide
                                           const resolvedBoundary = boundaryMap.get(xSnapped)
                                           const ownerSide = resolvedBoundary?.ownerSide || 'left'
+                                          const ownerDev = ownerSide === 'left' ? sb.leftDev : sb.rightDev
+                                          const ownerWidthPx = ownerSide === 'left' ? leftWidthPx : rightWidthPx
+                                          const diagonalOffset = calcDiagOffset(ownerDev, ownerWidthPx)
                                           
                                           let x1, y1, x2, y2
                                           if (ownerSide === 'left') {
@@ -1890,23 +1943,34 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
                                               x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
                                               y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
-                                              stroke="#d1d5db"
+                                              stroke="#9ca3af"
                                               strokeWidth="1"
-                                                strokeLinecap="butt"
+                                              strokeLinecap="butt"
                                               shapeRendering="crispEdges"
+                                              vectorEffect="non-scaling-stroke"
                                             />
                                           )
                                         } else {
                                           // Mixed types: one straight, one miter
                                           // Show the marker based on which side has the miter (the actual cut geometry)
-                                          const MIN_DEV_DEG = 1.0
-                                          const SIGNIFICANT_MITER_DEG = 8.0
-                                          const diagonalOffset = 12
+                                          const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev > 0
+                                          const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev > 0
                                           
-                                          // Check if left end is miter (after flipping for first part)
-                                          const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev >= SIGNIFICANT_MITER_DEG
-                                          // Check if right start is miter
-                                          const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev >= SIGNIFICANT_MITER_DEG
+                                          const leftWidthPx = Math.max(
+                                            1,
+                                            Math.floor(partPositions[sb.leftPartIdx].xEnd) -
+                                              (sb.leftPartIdx === 0 ? 0 : Math.floor(partPositions[sb.leftPartIdx].xStart))
+                                          )
+                                          const rightWidthPx = Math.max(
+                                            1,
+                                            Math.floor(partPositions[sb.rightPartIdx].xEnd) -
+                                              Math.floor(partPositions[sb.rightPartIdx].xStart)
+                                          )
+                                          
+                                          const diagonalOffset = calcDiagOffset(
+                                            leftIsMiter ? sb.leftDev : sb.rightDev,
+                                            leftIsMiter ? leftWidthPx : rightWidthPx
+                                          )
                                           
                                           // Show sloped if either side has a significant miter
                                           // BUT: if left is straight and right is miter, show straight (unless it's the last boundary)
@@ -1935,10 +1999,11 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                 y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
                                                 x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
                                                 y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
-                                                stroke="#d1d5db"
+                                                stroke="#9ca3af"
                                                 strokeWidth="1"
                                                 strokeLinecap="butt"
                                                 shapeRendering="crispEdges"
+                                                vectorEffect="non-scaling-stroke"
                                               />
                                             )
                                           } else if (rightIsMiter && sb.rightPartIdx === numParts - 1) {
@@ -1966,7 +2031,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                 y1={typeof y1 === 'number' ? y1 + 0.5 : y1}
                                                 x2={typeof x2 === 'number' ? x2 + 0.5 : x2}
                                                 y2={typeof y2 === 'number' ? y2 + 0.5 : y2}
-                                                stroke="#d1d5db"
+                                                stroke="#9ca3af"
                                                 strokeWidth="1"
                                                 strokeLinecap="butt"
                                                 shapeRendering="crispEdges"
@@ -1981,7 +2046,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                                 y1="0.5"
                                                 x2={Math.round(xSnapped) + 0.5}
                                                 y2={barHeight - 0.5}
-                                                stroke="#d1d5db"
+                                                stroke="#9ca3af"
                                                 strokeWidth="1"
                                                 strokeLinecap="butt"
                                                 shapeRendering="crispEdges"
