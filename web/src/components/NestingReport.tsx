@@ -26,6 +26,87 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
 
   // Default stock lengths: 6000mm and 12000mm
   const stockLengths = '6000,12000'
+  
+  const getDisplayPartName = (part: any): string => {
+    const partData = part?.part || {}
+    const reference = typeof partData.reference === 'string' && partData.reference.trim() ? partData.reference : null
+    const elementName = typeof partData.element_name === 'string' && partData.element_name.trim() ? partData.element_name : null
+    return reference || elementName || 'Unknown'
+  }
+
+  // Global canonical geometry map - established once across ALL profiles and patterns
+  // This ensures parts with the same name have identical geometry everywhere
+  const [globalCanonicalMap, setGlobalCanonicalMap] = useState<Map<string, { startDev: number; endDev: number; startSign: number; endSign: number } | null>>(new Map())
+
+  // Build global canonical map whenever nesting report changes
+  useEffect(() => {
+    if (!nestingReport) {
+      setGlobalCanonicalMap(new Map())
+      return
+    }
+
+    const canonicalMap = new Map<string, { startDev: number; endDev: number; startSign: number; endSign: number } | null>()
+
+    // Process ALL profiles and patterns to find first occurrence of each part
+    nestingReport.profiles.forEach((profile) => {
+      profile.cutting_patterns.forEach((pattern) => {
+        pattern.parts.forEach((part) => {
+          const partName = getDisplayPartName(part)
+          
+          // Only process if not already in map (first occurrence wins)
+          if (!canonicalMap.has(partName)) {
+            // Check both slope_info and part.part for angle data
+            const slopeInfo = part?.slope_info || {}
+            const partData = part?.part || {}
+            
+            const startMiter = slopeInfo.start_has_slope === true
+            const endMiter = slopeInfo.end_has_slope === true
+
+            // Debug: log the part data structure for b1024
+            if (partName === 'b1024') {
+              console.log(`[GLOBAL-CANONICAL-DEBUG] ${partName} part.part:`, partData)
+              console.log(`[GLOBAL-CANONICAL-DEBUG] ${partName} slope_info:`, slopeInfo)
+            }
+
+            // Only store canonical geometry for parts with two mitered ends
+            if (startMiter && endMiter) {
+              // Try to use angles from part.part (original part definition) first
+              let startAngle = partData.start_angle
+              let endAngle = partData.end_angle
+              
+              // Fallback to slope_info if not in part.part
+              if (startAngle == null) startAngle = slopeInfo.start_angle
+              if (endAngle == null) endAngle = slopeInfo.end_angle
+
+              if (startAngle != null && endAngle != null) {
+                // Calculate deviation from 90 degrees
+                const startDev = Math.abs(90 - Math.abs(startAngle))
+                const endDev = Math.abs(90 - Math.abs(endAngle))
+                const startSign = startAngle >= 0 ? 1 : -1
+                const endSign = endAngle >= 0 ? 1 : -1
+
+                canonicalMap.set(partName, {
+                  startDev,
+                  endDev,
+                  startSign,
+                  endSign
+                })
+                console.log(`[GLOBAL-CANONICAL] Setting canonical for ${partName}:`, { startDev, endDev, startSign, endSign, rawAngles: { startAngle, endAngle }, source: partData.start_angle != null ? 'part.part' : 'slope_info' })
+              } else {
+                canonicalMap.set(partName, null)
+              }
+            } else {
+              // Mark as seen but no canonical geometry needed
+              canonicalMap.set(partName, null)
+            }
+          }
+        })
+      })
+    })
+
+    console.log('[GLOBAL-CANONICAL] Built canonical map with', canonicalMap.size, 'entries')
+    setGlobalCanonicalMap(canonicalMap)
+  }, [nestingReport])
 
   // Don't load nesting data from localStorage - always start fresh
   // This ensures clean state when uploading new file or refreshing page
@@ -711,10 +792,18 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   return clamp(raw, 0, maxAllowed)
                                 }
                                 
-                                const calcBoundaryOffset = (devDeg: number | null | undefined) => {
+                                // Calculate miter offset based on the angle and bar height
+                                // The offset represents the horizontal distance of the diagonal cut
+                                // For visual clarity, we use a reduced scale factor
+                                const calcBoundaryOffset = (devDeg: number | null | undefined, partWidthPx: number) => {
                                   if (!devDeg || devDeg <= 0) return 0
-                                  const raw = Math.tan(degToRad(devDeg)) * (barHeight - 1)
-                                  return clamp(raw, 0, barHeight - 2)
+                                  // Calculate the horizontal offset for the miter cut
+                                  // Use 20% of bar height instead of full height for better visual proportions
+                                  const visualHeight = (barHeight - 1) * 0.2
+                                  const raw = Math.tan(degToRad(devDeg)) * visualHeight
+                                  // Clamp to reasonable values: max 20% of part width
+                                  const maxAllowed = Math.min(partWidthPx * 0.2, visualHeight)
+                                  return clamp(raw, 0, maxAllowed)
                                 }
                                 
                                 // A) Helper: Parse angle robustly
@@ -831,8 +920,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   
                                   pattern.parts.forEach((part) => {
                                     try {
-                                      const partData = part?.part || {}
-                                      const partName = partData.reference || partData.element_name || 'Unknown'
+                                      const partName = getDisplayPartName(part)
                                       const partLength = part?.length || 0
                                       
                                       if (partGroups.has(partName)) {
@@ -1012,63 +1100,34 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       return { startCut, endCut }
                                     })
                                 
-                                // Normalize two-sided miter parts by name so identical parts share the same
-                                // start/end slope order (display-only).
-                                const slopeOrderCounts = new Map<string, { startGeEnd: number; startLtEnd: number }>()
-                                partPositions.forEach(({ part }, idx) => {
-                                  const ends = finalPartEnds[idx]
-                                  if (!ends) return
-                                  if (ends.startCut.type !== 'miter' || ends.endCut.type !== 'miter') return
-                                  
-                                  const partData = part?.part || {}
-                                  const partName = String(
-                                    partData.reference || partData.element_name || partData.product_id || `b${idx + 1}`
-                                  )
-                                  
-                                  const startDev = ends.startCut.deviation || 0
-                                  const endDev = ends.endCut.deviation || 0
-                                  const counts = slopeOrderCounts.get(partName) || { startGeEnd: 0, startLtEnd: 0 }
-                                  if (startDev >= endDev) {
-                                    counts.startGeEnd += 1
-                                  } else {
-                                    counts.startLtEnd += 1
-                                  }
-                                  slopeOrderCounts.set(partName, counts)
-                                })
-                                
-                                const preferredOrderByName = new Map<string, 'startGeEnd' | 'startLtEnd'>()
-                                slopeOrderCounts.forEach((counts, name) => {
-                                  if (counts.startGeEnd === 0 && counts.startLtEnd === 0) return
-                                  preferredOrderByName.set(
-                                    name,
-                                    counts.startGeEnd >= counts.startLtEnd ? 'startGeEnd' : 'startLtEnd'
-                                  )
-                                })
-                                
-                                finalPartEnds = finalPartEnds.map((ends, idx) => {
-                                  if (!ends) return ends
-                                  if (ends.startCut.type !== 'miter' || ends.endCut.type !== 'miter') return ends
-                                  
-                                  const partData = partPositions[idx]?.part?.part || {}
-                                  const partName = String(
-                                    partData.reference || partData.element_name || partData.product_id || `b${idx + 1}`
-                                  )
-                                  const preferred = preferredOrderByName.get(partName)
-                                  if (!preferred) return ends
-                                  
-                                  const startDev = ends.startCut.deviation || 0
-                                  const endDev = ends.endCut.deviation || 0
-                                  const hasStartGeEnd = startDev >= endDev
-                                  
-                                  if ((preferred === 'startGeEnd' && hasStartGeEnd) || (preferred === 'startLtEnd' && !hasStartGeEnd)) {
-                                    return ends
-                                  }
-                                  
-                                  return {
-                                    startCut: ends.endCut,
-                                    endCut: ends.startCut
-                                  }
-                                })
+                                // DISABLED: Canonicalization was causing incorrect rendering
+                                // The angles from slope_info are already correct for each part's orientation
+                                // finalPartEnds = finalPartEnds.map((ends, idx) => {
+                                //   if (!ends) return ends
+                                //   if (ends.startCut.type !== 'miter' || ends.endCut.type !== 'miter') return ends
+                                //   
+                                //   const partName = getDisplayPartName(partPositions[idx]?.part)
+                                //   const canonical = globalCanonicalMap.get(partName)
+                                //   
+                                //   // If we have canonical geometry for this part, apply it
+                                //   if (canonical) {
+                                //     console.log(`[CANONICAL-APPLY] Part ${idx} (${partName}): APPLYING canonical`, canonical, 'was=', { startDev: ends.startCut.deviation, endDev: ends.endCut.deviation })
+                                //     return {
+                                //       startCut: {
+                                //         ...ends.startCut,
+                                //         deviation: canonical.startDev,
+                                //         angleSign: canonical.startSign
+                                //       },
+                                //       endCut: {
+                                //         ...ends.endCut,
+                                //         deviation: canonical.endDev,
+                                //         angleSign: canonical.endSign
+                                //       }
+                                //     }
+                                //   }
+                                //   
+                                //   return ends
+                                // })
                                 
                                 // C) Build boundary requests correctly (using deviation-normalized ends)
                                 interface SlopeRequest {
@@ -1237,125 +1296,68 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 // 1. Start with straight cut if possible
                                 const DISPLAY_ANGLE_MATCH_TOL = Math.max(ANGLE_MATCH_TOL, 5.0)
                                 
-                                // Compute optimal flip states across the whole bar to maximize flush boundaries.
-                                const getOrientedEnds = (idx: number, flip: boolean) => {
-                                  const ends = finalPartEnds[idx]
-                                  if (!ends) return null
-                                  return {
-                                    start: flip ? ends.endCut : ends.startCut,
-                                    end: flip ? ends.startCut : ends.endCut
-                                  }
-                                }
-                                
-                                const flushScore = (leftIdx: number, leftFlip: boolean, rightIdx: number, rightFlip: boolean) => {
-                                  const left = getOrientedEnds(leftIdx, leftFlip)
-                                  const right = getOrientedEnds(rightIdx, rightFlip)
-                                  if (!left || !right) return 0
-                                  
-                                  const leftEnd = left.end
-                                  const rightStart = right.start
-                                  const leftName = partPositions[leftIdx]?.part?.part?.reference || partPositions[leftIdx]?.part?.part?.element_name
-                                  const rightName = partPositions[rightIdx]?.part?.part?.reference || partPositions[rightIdx]?.part?.part?.element_name
-                                  const samePartName = leftName !== undefined && leftName === rightName
-                                  
-                                  if (leftEnd.type === 'straight' && rightStart.type === 'straight') {
-                                    return 1
-                                  }
-                                  
-                                  if (leftEnd.type === 'miter' && rightStart.type === 'miter') {
-                                    const devDiff = Math.abs((leftEnd.deviation || 0) - (rightStart.deviation || 0))
-                                    const signOpposite = leftEnd.angleSign !== rightStart.angleSign
-                                    if (devDiff <= DISPLAY_ANGLE_MATCH_TOL && signOpposite) {
-                                      return 2
-                                    }
-                                    
-                                    // If identical part name, still encourage sharing to avoid gaps
-                                    if (samePartName && devDiff <= DISPLAY_ANGLE_MATCH_TOL * 2) {
-                                      return 1
-                                    }
-                                    
-                                    return 0
-                                  }
-                                  
-                                  return 0
-                                }
-                                
-                                const dp: number[][] = Array.from({ length: numParts }, () => [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY])
-                                const prevChoice: number[][] = Array.from({ length: numParts }, () => [-1, -1])
-                                
-                                if (numParts > 0) {
-                                  dp[0][0] = 0.01 // slight bias to keep original orientation if tied
-                                  dp[0][1] = 0
-                                }
-                                
-                                for (let i = 1; i < numParts; i++) {
-                                  for (let currFlip = 0; currFlip <= 1; currFlip++) {
-                                    let bestScore = Number.NEGATIVE_INFINITY
-                                    let bestPrev = 0
-                                    
-                                    for (let prevFlip = 0; prevFlip <= 1; prevFlip++) {
-                                      const score = dp[i - 1][prevFlip] + flushScore(i - 1, prevFlip === 1, i, currFlip === 1)
-                                      if (score > bestScore) {
-                                        bestScore = score
-                                        bestPrev = prevFlip
-                                      }
-                                    }
-                                    
-                                    dp[i][currFlip] = bestScore
-                                    prevChoice[i][currFlip] = bestPrev
-                                  }
-                                }
-                                
+                                // NO DP, NO FLIPPING - just render parts with their canonical geometry
                                 const displayFlipStates: boolean[] = new Array(numParts).fill(false)
-                                if (numParts > 0) {
-                                  let lastFlip = dp[numParts - 1][1] > dp[numParts - 1][0] ? 1 : 0
-                                  for (let i = numParts - 1; i >= 0; i--) {
-                                    displayFlipStates[i] = lastFlip === 1
-                                    lastFlip = prevChoice[i][lastFlip] >= 0 ? prevChoice[i][lastFlip] : 0
-                                  }
-                                }
                                 
 
-                                // Canonicalize two-sided miter display by part name to keep proportions consistent
-                                const canonicalDisplayEndsByName = new Map<string, { startCut: PartEnd; endCut: PartEnd }>()
+                                // Canonicalize two-sided miter display by part name using majority order
+                                const slopeOrderByName = new Map<string, { startGeEnd: number; startLtEnd: number }>()
                                 partPositions.forEach(({ part }, idx) => {
+                                  const ends = finalPartEnds[idx]
+                                  if (!ends) return
+                                  if (ends.startCut.type !== 'miter' || ends.endCut.type !== 'miter') return
+                                  
                                   const partData = part?.part || {}
                                   const partName = String(
                                     partData.reference || partData.element_name || partData.product_id || `b${idx + 1}`
                                   )
-                                  const ends = finalPartEnds[idx]
-                                  if (!ends) return
-                                  const isTwoSided = ends.startCut.type === 'miter' && ends.endCut.type === 'miter'
-                                  if (isTwoSided && !canonicalDisplayEndsByName.has(partName)) {
-                                    canonicalDisplayEndsByName.set(partName, ends)
-                                  }
-                                })
-                                
-                                const getDisplayEndsForPart = (partIdx: number) => {
-                                  const ends = finalPartEnds[partIdx]
-                                  if (!ends) return null
-                                  if (ends.startCut.type !== 'miter' || ends.endCut.type !== 'miter') return ends
-                                  
-                                  const partData = partPositions[partIdx]?.part?.part || {}
-                                  const partName = String(
-                                    partData.reference || partData.element_name || partData.product_id || `b${partIdx + 1}`
-                                  )
-                                  const canonical = canonicalDisplayEndsByName.get(partName)
-                                  if (!canonical) return ends
                                   
                                   const startDev = ends.startCut.deviation || 0
                                   const endDev = ends.endCut.deviation || 0
-                                  const canonStartDev = canonical.startCut.deviation || 0
-                                  const canonEndDev = canonical.endCut.deviation || 0
-                                  
-                                  const diffAsIs = Math.abs(startDev - canonStartDev) + Math.abs(endDev - canonEndDev)
-                                  const diffSwapped = Math.abs(startDev - canonEndDev) + Math.abs(endDev - canonStartDev)
-                                  
-                                  if (diffSwapped + 0.001 < diffAsIs) {
-                                    return { startCut: ends.endCut, endCut: ends.startCut }
+                                  const counts = slopeOrderByName.get(partName) || { startGeEnd: 0, startLtEnd: 0 }
+                                  if (startDev >= endDev) {
+                                    counts.startGeEnd += 1
+                                  } else {
+                                    counts.startLtEnd += 1
                                   }
-                                  
-                                  return ends
+                                  slopeOrderByName.set(partName, counts)
+                                })
+                                
+                                const getPartNameAt = (partIdx: number) => {
+                                  const partData = partPositions[partIdx]?.part?.part || {}
+                                  return String(
+                                    partData.reference || partData.element_name || partData.product_id || `b${partIdx + 1}`
+                                  )
+                                }
+                                
+                                // Canonical ends are now already applied in finalPartEnds (using average geometry)
+                                // No need for additional canonicalization here
+                                
+                                const nextOccurenceIdx = (partIdx: number) => {
+                                  const name = getPartNameAt(partIdx)
+                                  const list = orderByName.get(name)
+                                  if (!list || list.length === 0) return null
+                                  const pos = list.findIndex((item) => item.idx === partIdx)
+                                  if (pos < 0 || pos + 1 >= list.length) return null
+                                  return list[pos + 1]
+                                }
+                                
+                                const shouldCanonicalizePart = (partIdx: number) => {
+                                  if (partIdx === 0) return true
+                                  return getPartNameAt(partIdx - 1) !== getPartNameAt(partIdx)
+                                }
+                                
+                                // Since we canonicalized geometry, we don't need flip alignment anymore
+                                // All instances use the same geometry from finalPartEnds
+                                
+                                const orientEnds = (ends: { startCut: PartEnd; endCut: PartEnd }, flip: boolean) => {
+                                  if (!flip) return ends
+                                  return { startCut: ends.endCut, endCut: ends.startCut }
+                                }
+                                
+                                const getDisplayEndsForPart = (partIdx: number, useCanonical: boolean) => {
+                                  // finalPartEnds already contains canonical geometry - just return it
+                                  return finalPartEnds[partIdx] || null
                                 }
                                 
                                 // DEBUG: Log slope info for repeated part names to diagnose proportion mismatches
@@ -1453,7 +1455,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                         const ownerSide = 'left'
                                         const ownerDev = leftDev
                                         const ownerSign = leftSign
-                                        const offset = calcBoundaryOffset(ownerDev)
+                                        // Calculate the left part's width in pixels
+                                        const leftPartWidth = Math.floor(partPositions[leftPartIdx].xEnd - partPositions[leftPartIdx].xStart)
+                                        const offset = calcBoundaryOffset(ownerDev, leftPartWidth)
                                         const baseX = boundaryX + 0.5
                                         
                                         // Use left part's end geometry as the shared line
@@ -1494,7 +1498,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                         return null
                                       }
                                       
-                                      const partName = part.part?.reference || part.part?.element_name || part.part?.product_id || `b${partIdx + 1}`
+                                      const partName = getDisplayPartName(part)
                                       const partEndInfo = finalPartEnds[partIdx]
                                       
                                       // Get the part number from the cutting list table mapping
@@ -1522,12 +1526,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                         })
                                       }
                                       
-                                      // First part: start at x=0 to eliminate gap with border
-                                      // Border left line is at x=0.5 with strokeWidth=1, stroke centered
-                                      // Stroke extends from 0 to 1, visible inner edge is at x=1
-                                      // But we start part at x=0 so it overlaps the border stroke slightly, eliminating the gap
-                                      // Other parts: use rounded start position
-                                      const xPx = partIdx === 0 ? 0 : Math.floor(xStart)
+                                      // Calculate pixel positions
+                                      // Use the raw positions from backend, rounding to integers
+                                      const xPx = Math.floor(xStart)
                                       
                                       // Calculate end position
                                       // CRITICAL: For last part, use the exact boundary (same as waste start)
@@ -1579,13 +1580,21 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       
                                       // DEBUG: Log first and last part final positions
                                       if (partIdx === 0) {
+                                        const partLength = part?.length || 0
+                                        const expectedWidthPx = partLength * pxPerMm
+                                        const partLengthFromPositions = xEnd - xStart
                                         console.log(`[NESTING_DEBUG] First part ${partIdx} (${partName}) FINAL:`, {
                                           xPx,
                                           endPx,
                                           wPx,
                                           xStart_raw: xStart,
                                           xEnd_raw: xEnd,
-                                          partEndsAt: xPx + wPx
+                                          partEndsAt: xPx + wPx,
+                                          partLength,
+                                          partLengthFromPositions,
+                                          expectedWidthPx,
+                                          pxPerMm,
+                                          widthMismatch: Math.abs(wPx - expectedWidthPx) > 1
                                         })
                                       }
                                       if (partIdx === lastPartIdx) {
@@ -1666,15 +1675,14 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           {/* CRITICAL: Only use clipPath for last part to prevent overflow */}
                                           {/* Calculate polygon boundaries once and reuse for both polygon and markers */}
                                           {(() => {
-                                            // Get cut types for this part (considering flip state)
-                                            const isFlipped = displayFlipStates[partIdx]
-                                            const displayEnds = getDisplayEndsForPart(partIdx) || partEndInfo
-                                            const startType = isFlipped ? displayEnds.endCut.type : displayEnds.startCut.type
-                                            const endType = isFlipped ? displayEnds.startCut.type : displayEnds.endCut.type
-                                            const startDev = isFlipped ? displayEnds.endCut.deviation || 0 : displayEnds.startCut.deviation || 0
-                                            const endDev = isFlipped ? displayEnds.startCut.deviation || 0 : displayEnds.endCut.deviation || 0
-                                            const startSign = isFlipped ? displayEnds.endCut.angleSign : displayEnds.startCut.angleSign
-                                            const endSign = isFlipped ? displayEnds.startCut.angleSign : displayEnds.endCut.angleSign
+                                            // Use canonical geometry directly - no flipping
+                                            const displayEnds = getDisplayEndsForPart(partIdx, shouldCanonicalizePart(partIdx)) || partEndInfo
+                                            const startType = displayEnds.startCut.type
+                                            const endType = displayEnds.endCut.type
+                                            const startDev = displayEnds.startCut.deviation || 0
+                                            const endDev = displayEnds.endCut.deviation || 0
+                                            const startSign = displayEnds.startCut.angleSign
+                                            const endSign = displayEnds.endCut.angleSign
                                             
                                             // Use same constants as marker lines
                                             const markerInset = 8
@@ -1731,7 +1739,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                             // Create polygon from this part's own geometry (consistent per part number)
                                             let points: string
                                             
-                                            const hasSlopedStart = startType === 'miter' && startDev > 0
+                                            // First part should have straight start edge (no miter at stock beginning)
+                                            // Only apply miter if this is NOT the first part OR if it's a shared boundary
+                                            const hasSlopedStart = startType === 'miter' && startDev > 0 && (partIdx > 0 || startIsShared)
                                             const hasSlopedEnd =
                                               endType === 'miter' &&
                                               endDev > 0 &&
@@ -1741,16 +1751,52 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               ? exactPartsEndPx + 0.5
                                               : polyRightX
                                             
-                                            const startOffset = hasSlopedStart ? calcBoundaryOffset(startDev) : 0
-                                            const endOffset = hasSlopedEnd ? calcBoundaryOffset(endDev) : 0
+                                            const startOffset = hasSlopedStart ? calcBoundaryOffset(startDev, wPx) : 0
+                                            const endOffset = hasSlopedEnd ? calcBoundaryOffset(endDev, wPx) : 0
+                                            
+                                            // Debug offset calculation for first few parts
+                                            if (partIdx <= 1) {
+                                              console.log(`[OFFSET-CALC] Part ${partIdx} (${partName}):`, {
+                                                startDev,
+                                                endDev,
+                                                barHeight,
+                                                wPx,
+                                                startOffsetRaw: startDev ? Math.tan(degToRad(startDev)) * (barHeight - 1) : 0,
+                                                endOffsetRaw: endDev ? Math.tan(degToRad(endDev)) * (barHeight - 1) : 0,
+                                                maxAllowedStart: wPx * 0.45,
+                                                maxAllowedEnd: wPx * 0.45,
+                                                startOffset,
+                                                endOffset
+                                              })
+                                            }
                                             
                                             const clampX = (x: number) => Math.max(0, Math.min(1000, x))
-                                            let topLeftX = clampX(polyLeftX)
-                                            let bottomLeftX = clampX(startSign >= 0 ? polyLeftX + startOffset : polyLeftX)
-                                            topLeftX = clampX(startSign >= 0 ? polyLeftX : polyLeftX + startOffset)
                                             
-                                            let topRightX = clampX(endSign >= 0 ? actualRightX - endOffset : actualRightX)
-                                            let bottomRightX = clampX(endSign >= 0 ? actualRightX : actualRightX - endOffset)
+                                            // Calculate left edge points
+                                            let topLeftX: number
+                                            let bottomLeftX: number
+                                            if (hasSlopedStart) {
+                                              // Apply miter offset based on sign
+                                              topLeftX = clampX(startSign >= 0 ? polyLeftX : polyLeftX + startOffset)
+                                              bottomLeftX = clampX(startSign >= 0 ? polyLeftX + startOffset : polyLeftX)
+                                            } else {
+                                              // Straight edge - no offset
+                                              topLeftX = clampX(polyLeftX)
+                                              bottomLeftX = clampX(polyLeftX)
+                                            }
+                                            
+                                            // Calculate right edge points
+                                            let topRightX: number
+                                            let bottomRightX: number
+                                            if (hasSlopedEnd) {
+                                              // Apply miter offset based on sign
+                                              topRightX = clampX(endSign >= 0 ? actualRightX - endOffset : actualRightX)
+                                              bottomRightX = clampX(endSign >= 0 ? actualRightX : actualRightX - endOffset)
+                                            } else {
+                                              // Straight edge - no offset
+                                              topRightX = clampX(actualRightX)
+                                              bottomRightX = clampX(actualRightX)
+                                            }
                                             
                                             // If this boundary is a shared complementary miter, force both parts to use the same line
                                             if (startIsShared && startType === 'miter' && partIdx > 0) {
@@ -1771,33 +1817,23 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               }
                                             }
                                             
+                                            // Debug logging for polygon calculation
+                                            if (partIdx === 0 || partIdx === 1) {
+                                              console.log(`[POLYGON-WIDTH] Part ${partIdx} (${partName}): polyLeft=${polyLeftX.toFixed(2)} polyRight=${polyRightX.toFixed(2)} visualWidth=${(polyRightX - polyLeftX).toFixed(2)} xPx=${xPx} endPx=${endPx} wPx=${wPx}`)
+                                              console.log(`[POLYGON-OFFSET] Part ${partIdx} (${partName}): startOffset=${startOffset.toFixed(2)} endOffset=${endOffset.toFixed(2)} startDev=${startDev.toFixed(2)} endDev=${endDev.toFixed(2)}`)
+                                              console.log(`[POLYGON-SLOPED] Part ${partIdx} (${partName}): hasSlopedStart=${hasSlopedStart} hasSlopedEnd=${hasSlopedEnd} startIsShared=${startIsShared} endIsShared=${endIsShared} startSign=${startSign} endSign=${endSign}`)
+                                              console.log(`[POLYGON-POINTS-FINAL] Part ${partIdx} (${partName}): topLeft=${topLeftX.toFixed(2)} bottomLeft=${bottomLeftX.toFixed(2)} topRight=${topRightX.toFixed(2)} bottomRight=${bottomRightX.toFixed(2)}`)
+                                            }
+                                            
                                             points = `${topLeftX},0.5 ${topRightX},0.5 ${bottomRightX},${barHeight - 0.5} ${bottomLeftX},${barHeight - 0.5}`
                                             
-                                            const startMarkerOffset = startType === 'miter' ? calcBoundaryOffset(startDev) : 0
-                                            const endMarkerOffset = endType === 'miter' ? calcBoundaryOffset(endDev) : 0
+                                            const startMarkerOffset = startType === 'miter' ? calcBoundaryOffset(startDev, wPx) : 0
+                                            const endMarkerOffset = endType === 'miter' ? calcBoundaryOffset(endDev, wPx) : 0
                                             
                                             const startMarkerTopX = startSign >= 0 ? polyLeftX : polyLeftX + startMarkerOffset
                                             const startMarkerBottomX = startSign >= 0 ? polyLeftX + startMarkerOffset : polyLeftX
                                             const endMarkerTopX = endSign >= 0 ? polyRightX - endMarkerOffset : polyRightX
                                             const endMarkerBottomX = endSign >= 0 ? polyRightX : polyRightX - endMarkerOffset
-                                            
-                                            // Debug logging for polygon calculation (especially for part 2)
-                                            if (partIdx === 1 || partName === 'b32') {
-                                              console.log(`[POLYGON-DEBUG] Part ${partIdx} (${partName}):`, {
-                                                startType,
-                                                endType,
-                                                startIsShared,
-                                                endIsShared,
-                                                isFlipped,
-                                                xPx,
-                                                endPx,
-                                                markerLeftX,
-                                                markerRightX,
-                                                polyLeftX,
-                                                polyRightX,
-                                                points
-                                              })
-                                            }
                                             
                                             // Calculate center X for part label - use actual polygon boundaries
                                             // Center between left and right (the actual visible boundaries)
@@ -1906,14 +1942,13 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                           {/* End boundary line for last part - draw outside clipPath to ensure visibility */}
                                           {/* For miter cuts, draw diagonal line; for straight cuts, draw vertical line */}
                                           {isLastPart && exactPartsEndPx > 0 && (() => {
-                                            // Get endType for the last part
-                                            const isFlipped = displayFlipStates[partIdx]
-                                            const displayEnds = getDisplayEndsForPart(partIdx) || partEndInfo
-                                            const endType = isFlipped ? displayEnds.startCut.type : displayEnds.endCut.type
-                                            const endDev = isFlipped ? displayEnds.startCut.deviation || 0 : displayEnds.endCut.deviation || 0
-                                            const endSign = isFlipped ? displayEnds.startCut.angleSign : displayEnds.endCut.angleSign
+                                            // Get endType for the last part - no flipping
+                                            const displayEnds = getDisplayEndsForPart(partIdx, shouldCanonicalizePart(partIdx)) || partEndInfo
+                                            const endType = displayEnds.endCut.type
+                                            const endDev = displayEnds.endCut.deviation || 0
+                                            const endSign = displayEnds.endCut.angleSign
                                             const partWidthPx = Math.max(1, exactPartsEndPx - xPx)
-                                            const endOffset = calcBoundaryOffset(endDev)
+                                            const endOffset = calcBoundaryOffset(endDev, partWidthPx)
                                             
                                             if (endType === 'miter') {
                                               // Sloped end boundary - draw diagonal line
@@ -2336,8 +2371,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   
                                   pattern.parts.forEach((part) => {
                                     try {
-                                      const partData = part?.part || {}
-                                      const partName = partData.reference || partData.element_name || 'Unknown'
+                                      const partName = getDisplayPartName(part)
                                       const partLength = part?.length || 0
                                       
                                       if (partGroups.has(partName)) {
@@ -2416,7 +2450,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       if (wPx < 20) return null
                                       
                                       // Get part number from mapping - use the EXACT same logic as SVG rendering
-                                      const partName = part.part?.reference || part.part?.element_name || part.part?.product_id || `b${partIdx + 1}`
+                                      const partName = getDisplayPartName(part)
                                       const partNameStr = String(partName || '')
                                       const partNumber = partNameToNumber.get(partNameStr) || partIdx + 1
                                       
