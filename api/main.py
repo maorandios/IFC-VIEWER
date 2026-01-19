@@ -2231,6 +2231,8 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
             end_angle = None
             start_has_slope = False
             end_has_slope = False
+            start_confidence = 0.0
+            end_confidence = 0.0
             
             if extractor:
                 try:
@@ -2256,6 +2258,7 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                 # DEVIATION convention: 0° = straight
                                 deviation_from_straight = abs_angle
                             
+                            # High confidence threshold for general slope detection
                             # Only consider it a slope if:
                             # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
@@ -2279,6 +2282,7 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                 # DEVIATION convention: 0° = straight
                                 deviation_from_straight = abs_angle
                             
+                            # High confidence threshold for general slope detection
                             # Only consider it a slope if:
                             # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
@@ -2409,7 +2413,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 "start_angle": float(start_angle) if start_angle is not None else None,
                 "end_angle": float(end_angle) if end_angle is not None else None,
                 "start_has_slope": bool(start_has_slope),
-                "end_has_slope": bool(end_has_slope)
+                "end_has_slope": bool(end_has_slope),
+                "start_confidence": float(start_confidence),
+                "end_confidence": float(end_confidence)
                 # Note: cut_piece.to_dict() removed to avoid JSON serialization issues with numpy arrays
             }
             
@@ -2700,25 +2706,83 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         if part1 in parts_to_remove:
                             continue
                         
-                        # Check if part1 has a slope
+                        # Check if part1 has a slope (high confidence)
                         part1_start_slope = part1.get("start_has_slope", False)
                         part1_end_slope = part1.get("end_has_slope", False)
                         part1_start_angle = part1.get("start_angle")
                         part1_end_angle = part1.get("end_angle")
+                        part1_start_conf = part1.get("start_confidence", 0.0)
+                        part1_end_conf = part1.get("end_confidence", 0.0)
                         
-                        if not (part1_start_slope or part1_end_slope):
+                        # For complementary pairing, also check low-confidence slopes (confidence > 0.2, angle > 5°)
+                        # This catches real slopes on short parts that have low confidence but can still be paired
+                        part1_start_low_conf_slope = False
+                        part1_end_low_conf_slope = False
+                        if part1_start_angle is not None and not part1_start_slope:
+                            abs_angle = abs(part1_start_angle)
+                            # Calculate deviation same way as high-confidence detection
+                            if 60 <= abs_angle <= 120:
+                                deviation = abs(part1_start_angle - 90.0)
+                            else:
+                                deviation = abs_angle
+                            # Low confidence threshold: 0.2 < confidence <= 0.5, deviation > 5° (more conservative)
+                            if deviation > 5.0 and 0.2 < part1_start_conf <= 0.5:
+                                part1_start_low_conf_slope = True
+                        
+                        if part1_end_angle is not None and not part1_end_slope:
+                            abs_angle = abs(part1_end_angle)
+                            if 60 <= abs_angle <= 120:
+                                deviation = abs(part1_end_angle - 90.0)
+                            else:
+                                deviation = abs_angle
+                            if deviation > 5.0 and 0.2 < part1_end_conf <= 0.5:
+                                part1_end_low_conf_slope = True
+                        
+                        # Skip if no slopes at all (neither high confidence nor low confidence)
+                        if not (part1_start_slope or part1_end_slope or part1_start_low_conf_slope or part1_end_low_conf_slope):
                             continue  # Skip parts without slopes for pairing
+                        
+                        # Use combined slope flags (high or low confidence)
+                        part1_start_slope_any = part1_start_slope or part1_start_low_conf_slope
+                        part1_end_slope_any = part1_end_slope or part1_end_low_conf_slope
                         
                         # Try to find a complementary part (only from valid parts)
                         for j, part2 in enumerate(valid_parts_for_this_stock[i+1:], start=i+1):
                             if part2 in parts_to_remove:
                                 continue
                             
-                            # Check if part2 has a complementary slope
+                            # Check if part2 has a complementary slope (high confidence)
                             part2_start_slope = part2.get("start_has_slope", False)
                             part2_end_slope = part2.get("end_has_slope", False)
                             part2_start_angle = part2.get("start_angle")
                             part2_end_angle = part2.get("end_angle")
+                            part2_start_conf = part2.get("start_confidence", 0.0)
+                            part2_end_conf = part2.get("end_confidence", 0.0)
+                            
+                            # Check for low-confidence slopes on part2
+                            part2_start_low_conf_slope = False
+                            part2_end_low_conf_slope = False
+                            if part2_start_angle is not None and not part2_start_slope:
+                                abs_angle = abs(part2_start_angle)
+                                if 60 <= abs_angle <= 120:
+                                    deviation = abs(part2_start_angle - 90.0)
+                                else:
+                                    deviation = abs_angle
+                                if deviation > 5.0 and 0.2 < part2_start_conf <= 0.5:
+                                    part2_start_low_conf_slope = True
+                            
+                            if part2_end_angle is not None and not part2_end_slope:
+                                abs_angle = abs(part2_end_angle)
+                                if 60 <= abs_angle <= 120:
+                                    deviation = abs(part2_end_angle - 90.0)
+                                else:
+                                    deviation = abs_angle
+                                if deviation > 5.0 and 0.2 < part2_end_conf <= 0.5:
+                                    part2_end_low_conf_slope = True
+                            
+                            # Use combined slope flags (high or low confidence)
+                            part2_start_slope_any = part2_start_slope or part2_start_low_conf_slope
+                            part2_end_slope_any = part2_end_slope or part2_end_low_conf_slope
                             
                             # Check for complementary slopes
                             # Complementary means: one part's start slope matches another's end slope (or vice versa)
@@ -2727,8 +2791,8 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             is_complementary = False
                             pairing_type = None
                             
-                            # Case 1: part1 start slope with part2 end slope
-                            if part1_start_slope and part2_end_slope and part1_start_angle is not None and part2_end_angle is not None:
+                            # Case 1: part1 start slope with part2 end slope (use combined flags for low-confidence detection)
+                            if part1_start_slope_any and part2_end_slope_any and part1_start_angle is not None and part2_end_angle is not None:
                                 # For complementary cuts, angles should be opposite (e.g., 45° and -45°)
                                 # Or we can use same angle if cutting from opposite ends
                                 angle1_abs = abs(part1_start_angle)
@@ -2741,8 +2805,8 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     is_complementary = True
                                     pairing_type = "start_end"
                             
-                            # Case 2: part1 end slope with part2 start slope
-                            if not is_complementary and part1_end_slope and part2_start_slope and part1_end_angle is not None and part2_start_angle is not None:
+                            # Case 2: part1 end slope with part2 start slope (use combined flags)
+                            if not is_complementary and part1_end_slope_any and part2_start_slope_any and part1_end_angle is not None and part2_start_angle is not None:
                                 angle1_abs = abs(part1_end_angle)
                                 angle2_abs = abs(part2_start_angle)
                                 angle_diff = abs(angle1_abs - angle2_abs)
@@ -2751,9 +2815,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     is_complementary = True
                                     pairing_type = "end_start"
                             
-                            # Case 2b: part1 end slope with part2 end slope (if angles are similar, can be paired by reversing one)
+                            # Case 2b: part1 end slope with part2 end slope (use combined flags)
                             # This handles cases where both parts have end cuts that can be complementary
-                            if not is_complementary and part1_end_slope and part2_end_slope and part1_end_angle is not None and part2_end_angle is not None:
+                            if not is_complementary and part1_end_slope_any and part2_end_slope_any and part1_end_angle is not None and part2_end_angle is not None:
                                 angle1_abs = abs(part1_end_angle)
                                 angle2_abs = abs(part2_end_angle)
                                 angle_diff = abs(angle1_abs - angle2_abs)
@@ -2764,10 +2828,10 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     is_complementary = True
                                     pairing_type = "end_end"
                             
-                            # Case 3: Both parts have slopes on both ends - check all combinations
+                            # Case 3: Both parts have slopes on both ends - check all combinations (use combined flags)
                             if not is_complementary:
                                 # Try part1 start with part2 start (if angles are opposite)
-                                if part1_start_slope and part2_start_slope and part1_start_angle is not None and part2_start_angle is not None:
+                                if part1_start_slope_any and part2_start_slope_any and part1_start_angle is not None and part2_start_angle is not None:
                                     angle1_abs = abs(part1_start_angle)
                                     angle2_abs = abs(part2_start_angle)
                                     angle_diff = abs(angle1_abs - angle2_abs)
@@ -2778,10 +2842,10 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                             is_complementary = True
                                             pairing_type = "start_start"
                                 
-                                # Try part1 end with part2 end (if angles are similar, can be paired)
+                                # Try part1 end with part2 end (use combined flags)
                                 # When both parts have end cuts with similar angles, one can be reversed
                                 # to create a complementary pair (end of part1 becomes start of part2)
-                                if not is_complementary and part1_end_slope and part2_end_slope and part1_end_angle is not None and part2_end_angle is not None:
+                                if not is_complementary and part1_end_slope_any and part2_end_slope_any and part1_end_angle is not None and part2_end_angle is not None:
                                     angle1_abs = abs(part1_end_angle)
                                     angle2_abs = abs(part2_end_angle)
                                     angle_diff = abs(angle1_abs - angle2_abs)
@@ -3032,9 +3096,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                         "slope_info": {
                                             "start_angle": part1_start_angle,
                                             "end_angle": part1_end_angle,
-                                            "start_has_slope": part1_start_slope,
-                                            "end_has_slope": part1_end_slope,
-                                            "has_slope": part1_start_slope or part1_end_slope
+                                            "start_has_slope": part1_start_slope_any,
+                                            "end_has_slope": part1_end_slope_any,
+                                            "has_slope": part1_start_slope_any or part1_end_slope_any
                                         }
                                     })
                                     # Store the current_length before adding the pair
@@ -3053,9 +3117,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                         "slope_info": {
                                             "start_angle": part2_start_angle,
                                             "end_angle": part2_end_angle,
-                                            "start_has_slope": part2_start_slope,
-                                            "end_has_slope": part2_end_slope,
-                                            "has_slope": part2_start_slope or part2_end_slope,
+                                            "start_has_slope": part2_start_slope_any,
+                                            "end_has_slope": part2_end_slope_any,
+                                            "has_slope": part2_start_slope_any or part2_end_slope_any,
                                             "complementary_pair": True
                                         }
                                     })

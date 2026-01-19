@@ -1138,13 +1138,21 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 }
                                 
                                 // First pass: collect geometry from FIRST occurrence of each part name
+                                // Skip complementary pairs as they have intentionally different orientations
                                 partPositions.forEach(({ part }, idx) => {
                                   const partName = getPartNameForIdx(idx)
                                   const ends = finalPartEnds[idx]
                                   if (!ends) return
                                   
+                                  // Skip complementary pairs - they should not be used as canonical geometry
+                                  const isComplementaryPart = (part as any)?.slope_info?.complementary_pair === true
+                                  if (isComplementaryPart) {
+                                    console.log(`[LOCAL-CANON] Skipping part ${idx} as canonical source (complementary pair)`)
+                                    return
+                                  }
+                                  
                                   if (!localCanonicalMap.has(partName)) {
-                                    // Store the first occurrence's geometry as canonical
+                                    // Store the first non-complementary occurrence's geometry as canonical
                                     localCanonicalMap.set(partName, {
                                       startDev: ends.startCut.deviation || 0,
                                       endDev: ends.endCut.deviation || 0,
@@ -1158,8 +1166,19 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 })
                                 
                                 // Second pass: apply canonical geometry to ALL instances
+                                // EXCEPTION: Skip canonicalization for parts that are marked as complementary pairs
+                                // Complementary pairs have intentionally different orientations and must preserve their actual slope info
                                 finalPartEnds = finalPartEnds.map((ends, idx) => {
                                   if (!ends) return ends
+                                  
+                                  // Check if this part is part of a complementary pair
+                                  const currentPart = partPositions[idx]?.part
+                                  const isComplementaryPart = (currentPart as any)?.slope_info?.complementary_pair === true
+                                  
+                                  if (isComplementaryPart) {
+                                    console.log(`[LOCAL-CANON] Skipping canonicalization for part ${idx} (complementary pair) - preserving actual slope info`)
+                                    return ends  // Keep original geometry for complementary pairs
+                                  }
                                   
                                   const partName = getPartNameForIdx(idx)
                                   const canonical = localCanonicalMap.get(partName)
