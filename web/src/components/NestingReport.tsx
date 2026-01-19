@@ -880,29 +880,35 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 }
                                 
                                 // A) Layout: Compute x positions by cumulative sum of part.length
-                                // Sort parts by length (longest first) for cutting order visualization
-                                const sortedParts = [...pattern.parts].sort((a, b) => {
-                                  const lengthA = a.length || 0
-                                  const lengthB = b.length || 0
-                                  return lengthB - lengthA // Descending order (longest first)
-                                })
+                                // DON'T SORT - use the order from the backend nesting algorithm
+                                // Sorting was causing parts to be positioned incorrectly
+                                const sortedParts = pattern.parts
+                                
+                                // Calculate total length of all parts first
+                                const totalPartsLengthMm = sortedParts.reduce((sum, part) => sum + (part.length || 0), 0)
+                                
+                                // Calculate the available space for parts in pixels
+                                // Reserve space for waste at the end
+                                const wasteMm = pattern.waste || 0
+                                const availableForPartsPx = 1000 * (1 - wasteMm / pattern.stock_length)
+                                
+                                // Calculate px per mm to fit all parts in available space
+                                const partsPxPerMm = totalPartsLengthMm > 0 ? availableForPartsPx / totalPartsLengthMm : pxPerMm
                                 
                                 // Parts are flush (no gaps) in manufacturing mode
                                 let cumulativeX = 0
                                 const partPositions = sortedParts.map((part, partIdx) => {
                                   const lengthMm = part.length || 0
                                   const xStart = cumulativeX
-                                  const xEnd = cumulativeX + (lengthMm * pxPerMm)
+                                  const xEnd = cumulativeX + (lengthMm * partsPxPerMm)
                                   cumulativeX = xEnd
                                   return { part, xStart, xEnd, lengthMm }
                                 })
                                 
                                 const numParts = partPositions.length
                                 const lastPartIdx = numParts - 1
-                                // Calculate exact used length from actual part positions (more accurate)
-                                const usedLengthMm = partPositions.length > 0 
-                                  ? partPositions[lastPartIdx].xEnd / pxPerMm 
-                                  : 0
+                                // Calculate exact used length from actual part positions
+                                const usedLengthMm = totalPartsLengthMm
                                 
                                 // Build orderByName map to group identical parts (by reference name)
                                 const orderByName = new Map<string, Array<{ idx: number; part: any }>>()
@@ -1935,16 +1941,10 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               markerRightX = endType === 'straight' ? endPx - markerInset : endPx
                                             }
                                             
-                                            // FIX: Polygon should fill the ENTIRE part width, not be inset like marker lines
-                                            // Use xPx and endPx directly for the polygon, not markerLeftX/markerRightX
-                                            // The marker lines will be inset, but the gray background should fill the full part
-                                            // CRITICAL: For last part, extend to full width (1000 for 0 waste, or exactPartsEndPx+1 for waste > 0)
+                                            // Polygon fills the part width from xPx to endPx
+                                            // Each part gets its natural width, no stretching
                                             const polyLeftX = xPx + 0.5
-                                            const polyRightX = (partIdx === lastPartIdx && pattern.waste > 0) 
-                                              ? exactPartsEndPx + 1  // Extend to exactPartsEndPx + 1 to fill gap before waste
-                                              : (partIdx === lastPartIdx && pattern.waste === 0)
-                                              ? 1000  // Last part with 0 waste: extend to full stock bar width
-                                              : endPx + 0.5  // Use endPx for other parts
+                                            const polyRightX = endPx + 0.5
                                             
                                             // Create polygon from this part's own geometry (consistent per part number)
                                             let points: string
@@ -2618,18 +2618,20 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   // If mapping fails, labels will fall back to part names
                                 }
                                 
-                                // Calculate part positions (same logic as in SVG)
-                                const sortedParts = [...pattern.parts].sort((a, b) => {
-                                  const lengthA = a.length || 0
-                                  const lengthB = b.length || 0
-                                  return lengthB - lengthA // Descending order (longest first)
-                                })
+                                // Calculate part positions (MUST match SVG section exactly)
+                                const sortedParts = pattern.parts // DON'T SORT - use backend order
+                                
+                                // Calculate total length and scaling (same as SVG)
+                                const totalPartsLengthMm = sortedParts.reduce((sum, part) => sum + (part.length || 0), 0)
+                                const wasteMm = pattern.waste || 0
+                                const availableForPartsPx = 1000 * (1 - wasteMm / pattern.stock_length)
+                                const partsPxPerMm = totalPartsLengthMm > 0 ? availableForPartsPx / totalPartsLengthMm : pxPerMm
                                 
                                 let cumulativeX = 0
                                 const partPositions = sortedParts.map((part, partIdx) => {
                                   const lengthMm = part.length || 0
                                   const xStart = cumulativeX
-                                  const xEnd = cumulativeX + (lengthMm * pxPerMm)
+                                  const xEnd = cumulativeX + (lengthMm * partsPxPerMm)
                                   cumulativeX = xEnd
                                   return { part, xStart, xEnd, lengthMm }
                                 })
