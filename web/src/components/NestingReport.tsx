@@ -795,15 +795,20 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 // Calculate miter offset based on the angle and bar height
                                 // The offset represents the horizontal distance of the diagonal cut
                                 // For visual clarity, we use a reduced scale factor
+                                // Minimum visual offset ensures even small slopes (< 5°) are visible
                                 const calcBoundaryOffset = (devDeg: number | null | undefined, partWidthPx: number) => {
                                   if (!devDeg || devDeg <= 0) return 0
                                   // Calculate the horizontal offset for the miter cut
                                   // Use 20% of bar height instead of full height for better visual proportions
                                   const visualHeight = (barHeight - 1) * 0.2
                                   const raw = Math.tan(degToRad(devDeg)) * visualHeight
+                                  // Minimum visual offset of 8px to ensure even small slopes are visible
+                                  const minVisualOffset = 8
                                   // Clamp to reasonable values: max 20% of part width
                                   const maxAllowed = Math.min(partWidthPx * 0.2, visualHeight)
-                                  return clamp(raw, 0, maxAllowed)
+                                  // Ensure at least minVisualOffset, but don't exceed maxAllowed
+                                  const withMinimum = Math.max(raw, minVisualOffset)
+                                  return clamp(withMinimum, minVisualOffset, maxAllowed)
                                 }
                                 
                                 // A) Helper: Parse angle robustly

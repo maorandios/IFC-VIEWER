@@ -2257,9 +2257,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                 deviation_from_straight = abs_angle
                             
                             # Only consider it a slope if:
-                            # 1. Deviation from straight is significant (> 5°)
+                            # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
-                            start_has_slope = deviation_from_straight > 5.0 and start_confidence > 0.5
+                            start_has_slope = deviation_from_straight > 1.0 and start_confidence > 0.5
                             nesting_log(f"[NESTING]   Start cut: {start_angle:.2f}° (deviation from straight: {deviation_from_straight:.2f}°, has_slope={start_has_slope}, confidence={start_confidence:.2f})")
                         else:
                             nesting_log(f"[NESTING]   Start cut: None")
@@ -2280,9 +2280,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                 deviation_from_straight = abs_angle
                             
                             # Only consider it a slope if:
-                            # 1. Deviation from straight is significant (> 5°)
+                            # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
-                            end_has_slope = deviation_from_straight > 5.0 and end_confidence > 0.5
+                            end_has_slope = deviation_from_straight > 1.0 and end_confidence > 0.5
                             nesting_log(f"[NESTING]   End cut: {end_angle:.2f}° (deviation from straight: {deviation_from_straight:.2f}°, has_slope={end_has_slope}, confidence={end_confidence:.2f})")
                         else:
                             nesting_log(f"[NESTING]   End cut: None")
