@@ -268,12 +268,26 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
   // Calculate part flip states - EXACTLY like app (to get actual geometry at boundaries)
   const partFlipStates: boolean[] = new Array(numParts).fill(false)
   
-  // Step 1: Optimize first part - always start with straight if possible
+  // Step 1: Optimize first part - always start with straight cut if possible to minimize waste
   if (numParts > 0) {
     const firstPart = partEnds[0]
     if (firstPart) {
+      const startDev = firstPart.startCut.deviation || 0
+      const endDev = firstPart.endCut.deviation || 0
+      
       // If first part has a straight end, flip it so straight is at position 0
       if (firstPart.endCut.type === 'straight' && firstPart.startCut.type === 'miter') {
+        partFlipStates[0] = true
+      }
+      // Also handle case where both are miters but one is much smaller (near-straight)
+      else if (firstPart.startCut.type === 'miter' && firstPart.endCut.type === 'miter') {
+        // If end is more straight (smaller deviation), flip to start with it
+        if (endDev < startDev && endDev < 5.0) {
+          partFlipStates[0] = true
+        }
+      }
+      // Also handle case where end is nearly straight but start is angled
+      else if (firstPart.endCut.type === 'miter' && endDev < 1.0 && firstPart.startCut.type === 'miter' && startDev > 5.0) {
         partFlipStates[0] = true
       }
     }

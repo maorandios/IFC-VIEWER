@@ -1186,6 +1186,36 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 // When consecutive parts have the same name, we want them to share boundaries
                                 const partFlipStates = new Array(numParts).fill(false)
                                 
+                                // Step 1: Optimize first part - always start with straight cut if possible to minimize waste
+                                if (numParts > 0) {
+                                  const firstPart = finalPartEnds[0]
+                                  if (firstPart) {
+                                    const startDev = firstPart.startCut.deviation || 0
+                                    const endDev = firstPart.endCut.deviation || 0
+                                    
+                                    console.log(`[FIRST-PART-OPT] First part cuts: start=${firstPart.startCut.type}(${startDev.toFixed(2)}°), end=${firstPart.endCut.type}(${endDev.toFixed(2)}°)`)
+                                    
+                                    // If first part has a straight end, flip it so straight is at position 0
+                                    if (firstPart.endCut.type === 'straight' && firstPart.startCut.type === 'miter') {
+                                      partFlipStates[0] = true
+                                      console.log(`[FIRST-PART-OPT] Flipping first part to start with straight cut (minimize waste)`)
+                                    }
+                                    // Also handle case where both are miters but one is much smaller (near-straight)
+                                    else if (firstPart.startCut.type === 'miter' && firstPart.endCut.type === 'miter') {
+                                      // If end is more straight (smaller deviation), flip to start with it
+                                      if (endDev < startDev && endDev < 5.0) {
+                                        partFlipStates[0] = true
+                                        console.log(`[FIRST-PART-OPT] Flipping first part to start with straighter end (${endDev.toFixed(2)}° vs ${startDev.toFixed(2)}°)`)
+                                      }
+                                    }
+                                    // Also handle case where end is marked as straight but start is miter with near-zero deviation
+                                    else if (firstPart.endCut.type === 'miter' && endDev < 1.0 && firstPart.startCut.type === 'miter' && startDev > 5.0) {
+                                      partFlipStates[0] = true
+                                      console.log(`[FIRST-PART-OPT] Flipping first part: end is nearly straight (${endDev.toFixed(2)}°), start is angled (${startDev.toFixed(2)}°)`)
+                                    }
+                                  }
+                                }
+                                
                                 // Helper to check if two cuts can share a boundary
                                 const cutsCanShare = (cut1: PartEnd, cut2: PartEnd): boolean => {
                                   if (cut1.type !== cut2.type) {
@@ -1211,7 +1241,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 }
                                 
                                 // Greedy algorithm: iterate through parts and flip if needed to share boundaries
-                                for (let i = 0; i < numParts - 1; i++) {
+                                // IMPORTANT: Start from index 1 to preserve first part optimization for waste minimization
+                                for (let i = 1; i < numParts - 1; i++) {
                                   const leftIdx = i
                                   const rightIdx = i + 1
                                   
@@ -1271,9 +1302,46 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   }
                                 }
                                 
+                                // Special case: Handle boundary between first (index 0) and second part (index 1)
+                                // Only flip the SECOND part if needed, never the first (to preserve waste minimization)
+                                if (numParts >= 2) {
+                                  const leftIdx = 0
+                                  const rightIdx = 1
+                                  const leftName = getPartNameForIdx(leftIdx)
+                                  const rightName = getPartNameForIdx(rightIdx)
+                                  
+                                  // Only optimize if parts have the same name (identical parts)
+                                  if (leftName === rightName) {
+                                    const leftEnds = finalPartEnds[leftIdx]
+                                    const rightEnds = finalPartEnds[rightIdx]
+                                    
+                                    if (leftEnds && rightEnds) {
+                                      const leftFlipped = partFlipStates[leftIdx]
+                                      const rightFlipped = partFlipStates[rightIdx]
+                                      
+                                      const leftEndCut = leftFlipped ? leftEnds.startCut : leftEnds.endCut
+                                      const rightStartCut = rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                      
+                                      const currentlyShared = cutsCanShare(leftEndCut, rightStartCut)
+                                      
+                                      if (!currentlyShared) {
+                                        // Try flipping ONLY the right part (index 1), never the first
+                                        const rightStartCutFlipped = !rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                        const wouldShareIfFlipped = cutsCanShare(leftEndCut, rightStartCutFlipped)
+                                        
+                                        if (wouldShareIfFlipped) {
+                                          partFlipStates[rightIdx] = !partFlipStates[rightIdx]
+                                          console.log(`[ORIENTATION] Flipped part ${rightIdx} to share boundary with first part (preserving first part waste optimization)`)
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                                
                                 // CRITICAL FIX: For complementary pairs, check if parts need to be flipped for visualization
                                 // The backend places parts to save material, but the slope_info might be in the "material" orientation
                                 // We need to flip them for visualization so the miter cuts appear at the SHARED boundary
+                                // IMPORTANT: Never flip the first part (index 0) to preserve waste minimization
                                 for (let i = 0; i < numParts - 1; i++) {
                                   const leftPart = partPositions[i].part
                                   const rightPart = partPositions[i + 1].part
@@ -1294,11 +1362,18 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       
                                       // If left has miter at START (outer edge) and right has miter at END (outer edge),
                                       // but they should have miters at the SHARED boundary (left END, right START), flip them
-                                      // Use TOGGLE instead of SET to preserve any previous flips from identical parts logic
                                       if (leftStartIsMiter && rightEndIsMiter && !leftEndIsMiter && !rightStartIsMiter) {
-                                        console.log(`[COMP-FLIP] Toggling flip for complementary pair at indices ${i}, ${i+1} to show miters at shared boundary`)
-                                        partFlipStates[i] = !partFlipStates[i]
-                                        partFlipStates[i + 1] = !partFlipStates[i + 1]
+                                        // Special case: If left part is the first part (index 0), only flip the right part
+                                        if (i === 0) {
+                                          console.log(`[COMP-FLIP] Only flipping right part of complementary pair (preserving first part for waste minimization)`)
+                                          partFlipStates[i + 1] = !partFlipStates[i + 1]
+                                          // Note: This may result in non-matching cuts at boundary, but waste minimization takes priority
+                                        } else {
+                                          // For non-first parts, flip both to show miters at shared boundary
+                                          console.log(`[COMP-FLIP] Toggling flip for complementary pair at indices ${i}, ${i+1} to show miters at shared boundary`)
+                                          partFlipStates[i] = !partFlipStates[i]
+                                          partFlipStates[i + 1] = !partFlipStates[i + 1]
+                                        }
                                       }
                                     }
                                   }
@@ -2056,24 +2131,24 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                             
                                             return (
                                               <>
-                                                <g clipPath={isLastPart ? `url(#${partClipId!})` : undefined}>
-                                                  <polygon
-                                                    points={points}
-                                                    fill="none"
-                                                    stroke="#9ca3af"
-                                                    strokeWidth="1"
-                                                    strokeLinejoin="miter"
-                                                    shapeRendering="crispEdges"
-                                                  />
-                                                </g>
+                                                {/* Polygon drawn WITHOUT clip path to preserve complete borders */}
+                                                {/* The polygon coordinates are already constrained to not extend into waste */}
+                                                <polygon
+                                                  points={points}
+                                                  fill="none"
+                                                  stroke="#9ca3af"
+                                                  strokeWidth="1"
+                                                  strokeLinejoin="miter"
+                                                  shapeRendering="crispEdges"
+                                                />
                                                 
                                                 {/* Per-part end markers - vertical lines at the boundary positions */}
                                                 {/* Only show markers for non-shared boundaries */}
                                                 {/* Shared boundaries will be drawn separately after all parts */}
                                                 {/* Marker lines are vertical for straight cuts, diagonal for miter cuts */}
                                                 <g clipPath={isLastPart ? `url(#${partClipId!})` : undefined}>
-                                                  {/* Start cut marker - only if NOT shared */}
-                                                  {!startIsShared && (
+                                                  {/* Start cut marker - only if NOT shared AND NOT first part (first part start is stock bar edge) */}
+                                                  {!startIsShared && partIdx > 0 && (
                                                     <>
                                                       {startType === 'miter' ? (
                                                         // Sloped start boundary - draw diagonal line
