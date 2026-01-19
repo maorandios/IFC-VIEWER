@@ -803,12 +803,13 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   const visualHeight = (barHeight - 1) * 0.2
                                   const raw = Math.tan(degToRad(devDeg)) * visualHeight
                                   // Minimum visual offset of 8px to ensure even small slopes are visible
-                                  const minVisualOffset = 8
+                                  // But scale it down for very narrow parts to avoid overflow
+                                  const minVisualOffset = Math.min(8, partWidthPx * 0.15)
                                   // Clamp to reasonable values: max 20% of part width
                                   const maxAllowed = Math.min(partWidthPx * 0.2, visualHeight)
                                   // Ensure at least minVisualOffset, but don't exceed maxAllowed
                                   const withMinimum = Math.max(raw, minVisualOffset)
-                                  return clamp(withMinimum, minVisualOffset, maxAllowed)
+                                  return clamp(withMinimum, 0, maxAllowed)
                                 }
                                 
                                 // A) Helper: Parse angle robustly
