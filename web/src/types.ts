@@ -91,6 +91,39 @@ export interface NestingReport {
   }
 }
 
+// Stock bar rendering data - pre-calculated by the main app for PDF generation
+export interface StockBarRenderData {
+  // SVG polygon points for each part
+  parts: Array<{
+    partNumber: number
+    partName: string
+    polygonPoints: string  // SVG polygon points attribute
+    fillColor: string
+    strokeColor: string
+    labelX: number  // Label center X position (0-1000 px)
+    labelY: number  // Label center Y position (0-60 px)
+    showLabel: boolean
+  }>
+  // Waste area (if any)
+  waste: {
+    x: number  // Start X position (0-1000 px)
+    width: number  // Width in px
+    color: string
+  } | null
+  // Cut line markers
+  cutLines: Array<{
+    x: number  // X position (0-1000 px)
+    y1: number  // Start Y (0-60 px)
+    y2: number  // End Y (0-60 px)
+    type: 'straight' | 'miter'  // Line type for styling
+    isShared: boolean  // Whether this is a shared boundary
+  }>
+  // Stock bar dimensions
+  stockLengthMm: number
+  totalWidthPx: number  // Should be 1000
+  heightPx: number  // Should be 60
+}
+
 
 
 

@@ -166,7 +166,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
       const doc = <NestingReportPDF 
         nestingReport={nestingReport} 
         report={report} 
-        filename={filename} 
+        filename={filename}
       />
       
       const asPdf = pdf(doc)
@@ -747,7 +747,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                           <div className="relative bg-white rounded mb-3 border border-gray-300" style={{ height: '60px', overflow: 'hidden' }}>
                             {/* Text labels rendered as absolute positioned divs to prevent SVG scaling */}
                             {/* Labels are rendered inside the SVG function to access partPositions */}
-                            <svg key={`svg-${profileIdx}-${patternIdx}`} className="absolute inset-0 w-full h-full" viewBox="0 0 1000 60" preserveAspectRatio="none" shapeRendering="crispEdges">
+                            <svg key={`svg-${profileIdx}-${patternIdx}`} id={`stockbar-svg-${profileIdx}-${patternIdx}`} className="absolute inset-0 w-full h-full" viewBox="0 0 1000 60" preserveAspectRatio="none" shapeRendering="crispEdges">
                               <defs>
                                 <clipPath id={`clip-${profileIdx}-${patternIdx}`}>
                                   <rect x="0" y="0" width="1000" height="60" />

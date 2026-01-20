@@ -76,15 +76,11 @@ const styles = StyleSheet.create({
   },
   stockBarContainer: {
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#bfbfbf',
-    borderStyle: 'solid',
-    padding: 5,
     backgroundColor: '#ffffff',
   },
   stockBar: {
     height: 40,
-    width: 500,
+    width: '100%',  // Use full width to match table
     backgroundColor: '#f0f0f0',
     borderWidth: 1,
     borderColor: '#333',
@@ -95,9 +91,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     height: 40,
-    backgroundColor: '#e3f2fd',
-    borderRightWidth: 1,
-    borderRightColor: '#1976d2',
+    backgroundColor: '#ffffff',  // White background to match app
+    borderRightWidth: 0,  // Remove border - will use SVG outlines instead
+    borderRightColor: 'transparent',
     borderRightStyle: 'solid',
     display: 'flex',
     alignItems: 'center',
@@ -130,12 +126,12 @@ const styles = StyleSheet.create({
 const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: string }> = ({ pattern, profileName }) => {
   // Match app's coordinate system exactly
   // App uses: viewBox="0 0 1000 60" (width=1000, height=60)
-  // PDF uses: 500x40 (scale: 0.5x width, 0.667x height)
+  // PDF uses full page width (A4 - padding = 595 - 60 = 535) x 40 height
   const appWidth = 1000
   const appHeight = 60
-  const pdfWidth = 500
+  const pdfWidth = 535  // A4 page width (595pt) - page padding (30pt × 2)
   const pdfHeight = 40
-  const widthScale = pdfWidth / appWidth  // 0.5
+  const widthScale = pdfWidth / appWidth  // ~0.535
   const heightScale = pdfHeight / appHeight  // 0.667
   
   const stockLength = pattern.stock_length
@@ -731,19 +727,36 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   />
                 </Svg>
                 
-                {/* Part label */}
-                {Math.abs(polyRightXScaled - polyLeftXScaled) >= 15 && (
-                  <Text style={{
-                    position: 'absolute',
-                    left: centerX - 3,
-                    top: centerY - 4,
-                    fontSize: 8,
-                    fontWeight: 'bold',
-                    color: '#4b5563',
-                  }}>
-                    {String(partNumber)}
-                  </Text>
-                )}
+                {/* Part label - positioned at center */}
+                {(() => {
+                  // Calculate actual part width from scaled coordinates  
+                  const partWidth = Math.abs(polyRightXScaled - polyLeftXScaled)
+                  
+                  // Only show label if part is wide enough
+                  if (partWidth < 10) return null
+                  
+                  return (
+                    <View style={{
+                      position: 'absolute',
+                      left: polyLeftXScaled,
+                      top: 0,
+                      width: partWidth,
+                      height: pdfHeight,
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Text style={{
+                        fontSize: 8,
+                        fontWeight: 'bold',
+                        color: '#1f2937',
+                      }}>
+                        {String(partNumber)}
+                      </Text>
+                    </View>
+                  )
+                })()}
               </View>
             )
           })}
@@ -1183,12 +1196,6 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
           })()}
         </View>
       </View>
-      
-      {/* Labels */}
-      <View style={styles.stockBarLabels}>
-        <Text>0mm</Text>
-        <Text>{Math.round(stockLength)}mm</Text>
-      </View>
     </View>
   )
 }
@@ -1196,7 +1203,7 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
 export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({ 
   nestingReport, 
   report, 
-  filename 
+  filename
 }) => {
   const formatLength = (mm: number) => {
     if (mm >= 1000) {
