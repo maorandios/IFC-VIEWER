@@ -1011,27 +1011,33 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                     startIsSlope = slopeInfo.start_has_slope === true
                                     endIsSlope = slopeInfo.end_has_slope === true
                                     
-                                    // If backend says no slope, set deviation to 0 (not calculated from angles)
-                                    // This ensures boundary rendering respects the backend's decision
-                                    if (startIsSlope) {
-                                      // Only calculate deviation if backend says it's a slope
-                                      if (startRawAngle !== null) {
-                                        const startAnalysis = analyzeAngle(startRawAngle)
+                                    // Calculate deviation from angles for boundary detection
+                                    // But respect backend's slope flags for rendering
+                                    if (startRawAngle !== null) {
+                                      const startAnalysis = analyzeAngle(startRawAngle)
+                                      // Use calculated deviation for boundary matching, but...
+                                      if (startIsSlope) {
+                                        // Backend says it's a slope - calculate proper deviation
                                         startDeviation = startAnalysis.deviation
+                                      } else {
+                                        // Backend says no slope - still calculate deviation for boundary detection
+                                        // but keep it for matching purposes (don't set to 0)
+                                        startDeviation = startAnalysis.deviation || 0
                                       }
                                     } else {
-                                      // Backend says no slope - set deviation to 0
                                       startDeviation = 0
                                     }
                                     
-                                    if (endIsSlope) {
-                                      // Only calculate deviation if backend says it's a slope
-                                      if (endRawAngle !== null) {
-                                        const endAnalysis = analyzeAngle(endRawAngle)
+                                    if (endRawAngle !== null) {
+                                      const endAnalysis = analyzeAngle(endRawAngle)
+                                      if (endIsSlope) {
+                                        // Backend says it's a slope - calculate proper deviation
                                         endDeviation = endAnalysis.deviation
+                                      } else {
+                                        // Backend says no slope - still calculate deviation for boundary detection
+                                        endDeviation = endAnalysis.deviation || 0
                                       }
                                     } else {
-                                      // Backend says no slope - set deviation to 0
                                       endDeviation = 0
                                     }
                                   } else {
@@ -1211,8 +1217,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   if (firstPart) {
                                     const startDev = firstPart.startCut.deviation || 0
                                     const endDev = firstPart.endCut.deviation || 0
+                                    const firstPartName = partPositions[0]?.part?.part?.reference || partPositions[0]?.part?.part?.element_name || 'part0'
                                     
-                                    console.log(`[FIRST-PART-OPT] First part cuts: start=${firstPart.startCut.type}(${startDev.toFixed(2)}°), end=${firstPart.endCut.type}(${endDev.toFixed(2)}°)`)
+                                    console.log(`[FIRST-PART-OPT] First part (${firstPartName}) cuts: start=${firstPart.startCut.type}(${startDev.toFixed(2)}°), end=${firstPart.endCut.type}(${endDev.toFixed(2)}°)`)
                                     
                                     // If first part has a straight end, flip it so straight is at position 0
                                     if (firstPart.endCut.type === 'straight' && firstPart.startCut.type === 'miter') {
@@ -1221,8 +1228,16 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                     }
                                     // Also handle case where both are miters but one is much smaller (near-straight)
                                     else if (firstPart.startCut.type === 'miter' && firstPart.endCut.type === 'miter') {
-                                      // If end is more straight (smaller deviation), flip to start with it
-                                      if (endDev < startDev && endDev < 5.0) {
+                                      // ONLY flip if one end is nearly straight (<5°) AND the other is significantly larger
+                                      // Do NOT flip if BOTH ends have significant slopes (both >= MIN_DEV_DEG)
+                                      const bothSignificantSlopes = startDev >= MIN_DEV_DEG && endDev >= MIN_DEV_DEG
+                                      
+                                      console.log(`[FIRST-PART-OPT] Both miters check: startDev=${startDev.toFixed(2)}, endDev=${endDev.toFixed(2)}, bothSignificant=${bothSignificantSlopes}, MIN_DEV_DEG=${MIN_DEV_DEG}`)
+                                      
+                                      if (bothSignificantSlopes) {
+                                        console.log(`[FIRST-PART-OPT] NOT flipping - both ends have significant slopes (${startDev.toFixed(2)}° and ${endDev.toFixed(2)}°)`)
+                                      } else if (endDev < startDev && endDev < 5.0) {
+                                        // Only flip if end is nearly straight
                                         partFlipStates[0] = true
                                         console.log(`[FIRST-PART-OPT] Flipping first part to start with straighter end (${endDev.toFixed(2)}° vs ${startDev.toFixed(2)}°)`)
                                       }
@@ -1232,6 +1247,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       partFlipStates[0] = true
                                       console.log(`[FIRST-PART-OPT] Flipping first part: end is nearly straight (${endDev.toFixed(2)}°), start is angled (${startDev.toFixed(2)}°)`)
                                     }
+                                    
+                                    console.log(`[FIRST-PART-OPT] First part flip decision: partFlipStates[0]=${partFlipStates[0]}`)
                                   }
                                 }
                                 
@@ -1742,12 +1759,21 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                     const leftPartName = partPositions[leftPartIdx]?.part?.part?.reference || `b${leftPartIdx + 1}`
                                     const rightPartName = partPositions[rightPartIdx]?.part?.part?.reference || `b${rightPartIdx + 1}`
                                     
+                                    // Check if this is a complementary pair
+                                    const leftPart = partPositions[leftPartIdx]?.part
+                                    const rightPart = partPositions[rightPartIdx]?.part
+                                    const isComplementaryPair = 
+                                      (leftPart as any)?.slope_info?.complementary_pair === true ||
+                                      (rightPart as any)?.slope_info?.complementary_pair === true
+                                    
                                     let isShared = false
                                     if (leftEndType === 'straight' && rightStartType === 'straight') {
                                       isShared = true
                                     } else if (leftEndType === 'miter' && rightStartType === 'miter') {
                                       const devDiff = Math.abs(leftDev - rightDev)
-                                      isShared = devDiff <= DISPLAY_ANGLE_MATCH_TOL
+                                      // For complementary pairs with both miters, always treat as shared (they flash together)
+                                      // For regular parts, use angle tolerance
+                                      isShared = isComplementaryPair || (devDiff <= DISPLAY_ANGLE_MATCH_TOL)
                                     } else {
                                       const bothNearStraight = 
                                         (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
@@ -2050,8 +2076,10 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                             let hasSlopedStart: boolean
                                             let hasSlopedEnd: boolean
                                             
-                                            // Show slope at start if: geometry has miter AND not at stock edge  
-                                            hasSlopedStart = startType === 'miter' && startDev > 0 && partIdx > 0
+                                            // Show slope at start if: geometry has miter AND (not at stock edge OR part has two significant slopes)
+                                            // For first part (partIdx === 0): show start slope ONLY if part has TWO significant miters
+                                            const bothSignificantMiters = startType === 'miter' && endType === 'miter' && startDev >= 1.0 && endDev >= 1.0
+                                            hasSlopedStart = startType === 'miter' && startDev > 0 && (partIdx > 0 || bothSignificantMiters)
                                             
                                             // Show slope at end if: geometry has miter AND (not at last part OR last part with waste)
                                             hasSlopedEnd = endType === 'miter' && endDev > 0 && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
@@ -2757,8 +2785,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       let wPx = endPx - xPx
                                       wPx = Math.max(1, Math.floor(wPx))
                                       
-                                      // Only show label if part is wide enough
-                                      if (wPx < 20) return null
+                                      // Only show label if part is wide enough (lowered threshold to show labels for smaller parts)
+                                      if (wPx < 15) return null
                                       
                                       // Get part number from mapping - use the EXACT same logic as SVG rendering
                                       const partName = getDisplayPartName(part)

@@ -81,7 +81,7 @@ FASTENER_TYPES = {"IfcFastener", "IfcMechanicalFastener"}
 PROXY_TYPES = {"IfcProxy", "IfcBuildingElementProxy"}
 
 # Control nesting logs - set to False to suppress [NESTING] log messages
-ENABLE_NESTING_LOGS = False
+ENABLE_NESTING_LOGS = True
 
 def nesting_log(*args, **kwargs):
     """Print nesting log messages only if ENABLE_NESTING_LOGS is True."""
@@ -2263,6 +2263,15 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
                             start_has_slope = deviation_from_straight > 1.0 and start_confidence > 0.5
+                            
+                            # Store deviation for later dual-slope check
+                            start_deviation_value = deviation_from_straight
+                            
+                            # Debug for b32/b30
+                            part_ref = element.Name if hasattr(element, 'Name') else str(element.id())
+                            if 'b32' in str(part_ref).lower() or 'b30' in str(part_ref).lower():
+                                nesting_log(f"[B32-B30-DEBUG] {part_ref} START: angle={start_angle:.2f}°, deviation={deviation_from_straight:.2f}°, confidence={start_confidence:.2f}, has_slope={start_has_slope}, length={length_mm:.1f}mm")
+                            
                             nesting_log(f"[NESTING]   Start cut: {start_angle:.2f}° (deviation from straight: {deviation_from_straight:.2f}°, has_slope={start_has_slope}, confidence={start_confidence:.2f})")
                         else:
                             nesting_log(f"[NESTING]   Start cut: None")
@@ -2287,6 +2296,42 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             # 1. Deviation from straight is significant (> 1°)
                             # 2. Confidence is high enough (> 0.5) to trust the measurement
                             end_has_slope = deviation_from_straight > 1.0 and end_confidence > 0.5
+                            
+                            # Store deviation for later dual-slope check
+                            end_deviation_value = deviation_from_straight
+                            
+                            # Special case: Short parts with BOTH ends having similar low-confidence angles
+                            # This often indicates potential complementary pairing
+                            # If both ends have similar angles AND low confidence, use BOTH as slopes
+                            # Let the complementary pair detection decide which boundaries to share
+                            if (not start_has_slope and not end_has_slope and 
+                                start_confidence < 0.5 and end_confidence < 0.5 and
+                                length_mm < 500 and  # Only for short parts
+                                start_deviation_value > 15.0 and end_deviation_value > 15.0):  # Both have significant angles
+                                
+                                angle_diff = abs(start_deviation_value - end_deviation_value)
+                                if angle_diff < 2.0:  # Very similar angles
+                                    # Enable only the LARGER angle as the slope (the other is likely an artifact or shared boundary)
+                                    if start_deviation_value > end_deviation_value:
+                                        start_has_slope = True
+                                        nesting_log(f"[NESTING]   Short part ({length_mm:.1f}mm) with similar angles - using START ({start_deviation_value:.1f}°) over END ({end_deviation_value:.1f}°)")
+                                    else:
+                                        end_has_slope = True
+                                        nesting_log(f"[NESTING]   Short part ({length_mm:.1f}mm) with similar angles - using END ({end_deviation_value:.1f}°) over START ({start_deviation_value:.1f}°)")
+                                elif start_deviation_value > end_deviation_value:
+                                    # Start has larger angle - make it the slope
+                                    start_has_slope = True
+                                    nesting_log(f"[NESTING]   Short part: Using START as slope ({start_deviation_value:.1f}° > {end_deviation_value:.1f}°)")
+                                else:
+                                    # End has larger angle - make it the slope  
+                                    end_has_slope = True
+                                    nesting_log(f"[NESTING]   Short part: Using END as slope ({end_deviation_value:.1f}° > {start_deviation_value:.1f}°)")
+                            
+                            # Debug for b32/b30
+                            part_ref = element.Name if hasattr(element, 'Name') else str(element.id())
+                            if 'b32' in str(part_ref).lower() or 'b30' in str(part_ref).lower():
+                                nesting_log(f"[B32-B30-DEBUG] {part_ref} END: angle={end_angle:.2f}°, deviation={deviation_from_straight:.2f}°, confidence={end_confidence:.2f}, has_slope={end_has_slope}, length={length_mm:.1f}mm")
+                            
                             nesting_log(f"[NESTING]   End cut: {end_angle:.2f}° (deviation from straight: {deviation_from_straight:.2f}°, has_slope={end_has_slope}, confidence={end_confidence:.2f})")
                         else:
                             nesting_log(f"[NESTING]   End cut: None")
@@ -4448,4 +4493,10 @@ async def get_element_full(element_id: int, filename: str):
 async def health():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+
+
+
+
 
