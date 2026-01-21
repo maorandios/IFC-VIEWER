@@ -2735,6 +2735,100 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 # When pairing, check ALL available stock lengths to find the best fit
                 # Then fill remaining space with other parts
                 
+                # PRE-STEP: Identify complementary chains (sequences of parts that can nest together)
+                # This algorithm builds chains by finding parts that can connect regardless of order
+                # This is for DISPLAY purposes only - actual pairing logic below remains unchanged
+                ANGLE_MATCH_TOL = 5.0
+                MIN_SLOPE_ANGLE = 1.0
+                
+                # Helper function to check if two slopes match (are complementary)
+                def slopes_match(angle1, angle2):
+                    if angle1 is None or angle2 is None:
+                        return False
+                    angle_diff = abs(abs(angle1) - abs(angle2))
+                    return angle_diff < ANGLE_MATCH_TOL and abs(angle1) > MIN_SLOPE_ANGLE
+                
+                # Build a graph of which parts can connect to which
+                # part_connections[i] = list of (j, connection_type) where j can connect to i
+                # connection_type: 'start-start', 'start-end', 'end-start', 'end-end'
+                part_connections = {i: [] for i in range(len(valid_parts_for_this_stock))}
+                
+                for i in range(len(valid_parts_for_this_stock)):
+                    part_i = valid_parts_for_this_stock[i]
+                    i_start_slope = part_i.get("start_has_slope", False)
+                    i_end_slope = part_i.get("end_has_slope", False)
+                    i_start_angle = part_i.get("start_angle")
+                    i_end_angle = part_i.get("end_angle")
+                    
+                    for j in range(i + 1, len(valid_parts_for_this_stock)):
+                        part_j = valid_parts_for_this_stock[j]
+                        j_start_slope = part_j.get("start_has_slope", False)
+                        j_end_slope = part_j.get("end_has_slope", False)
+                        j_start_angle = part_j.get("start_angle")
+                        j_end_angle = part_j.get("end_angle")
+                        
+                        # Check all possible connection types
+                        if i_start_slope and j_start_slope and slopes_match(i_start_angle, j_start_angle):
+                            part_connections[i].append((j, 'start-start'))
+                            part_connections[j].append((i, 'start-start'))
+                        if i_start_slope and j_end_slope and slopes_match(i_start_angle, j_end_angle):
+                            part_connections[i].append((j, 'start-end'))
+                            part_connections[j].append((i, 'end-start'))
+                        if i_end_slope and j_start_slope and slopes_match(i_end_angle, j_start_angle):
+                            part_connections[i].append((j, 'end-start'))
+                            part_connections[j].append((i, 'start-end'))
+                        if i_end_slope and j_end_slope and slopes_match(i_end_angle, j_end_angle):
+                            part_connections[i].append((j, 'end-end'))
+                            part_connections[j].append((i, 'end-end'))
+                
+                # Find the longest chains using greedy approach
+                # Start from parts with only one connection (chain ends) or any unvisited part
+                used_in_chains = set()
+                all_chains = []
+                
+                # Priority: start with parts that have only 1 connection (likely chain ends)
+                start_candidates = sorted(range(len(valid_parts_for_this_stock)),
+                                        key=lambda x: len(part_connections[x]))
+                
+                for start_idx in start_candidates:
+                    if start_idx in used_in_chains:
+                        continue
+                    if len(part_connections[start_idx]) == 0:
+                        continue
+                    
+                    # Build chain starting from this part
+                    chain = [start_idx]
+                    used_in_chains.add(start_idx)
+                    
+                    # Extend chain as long as possible
+                    while True:
+                        current_idx = chain[-1]
+                        # Find next part to add (not already in chain)
+                        next_candidates = [(idx, conn_type) for idx, conn_type in part_connections[current_idx]
+                                          if idx not in used_in_chains]
+                        
+                        if not next_candidates:
+                            break
+                        
+                        # Pick the first available connection
+                        next_idx, conn_type = next_candidates[0]
+                        chain.append(next_idx)
+                        used_in_chains.add(next_idx)
+                    
+                    if len(chain) >= 2:
+                        all_chains.append(chain)
+                        nesting_log(f"[NESTING] Found complementary chain of {len(chain)} parts: {chain}")
+                
+                # Mark all parts in chains with complementary_pair flag (for frontend display)
+                complementary_chain_parts = set()
+                for chain in all_chains:
+                    for idx in chain:
+                        complementary_chain_parts.add(idx)
+                        part = valid_parts_for_this_stock[idx]
+                        if "slope_info" not in part:
+                            part["slope_info"] = {}
+                        part["slope_info"]["complementary_pair"] = True
+                
                 # Step 1: Try to find complementary slope pairs (only from valid parts)
                 # For IPE600 and other large profiles, prioritize finding complementary pairs first
                 # First, find all complementary pairs and check which stock length they fit in
@@ -3143,7 +3237,8 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                             "end_angle": part1_end_angle,
                                             "start_has_slope": part1_start_slope_any,
                                             "end_has_slope": part1_end_slope_any,
-                                            "has_slope": part1_start_slope_any or part1_end_slope_any
+                                            "has_slope": part1_start_slope_any or part1_end_slope_any,
+                                            "complementary_pair": True
                                         }
                                     })
                                     # Store the current_length before adding the pair
@@ -3331,6 +3426,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         break
                     
                     # Part fits - add it
+                    # Check if part has complementary_pair flag from pre-processing
+                    comp_pair_flag = part.get("slope_info", {}).get("complementary_pair", False)
+                    
                     pattern_parts.append({
                         "part": part,
                         "cut_position": cut_position,
@@ -3340,7 +3438,8 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             "end_angle": part.get("end_angle"),
                             "start_has_slope": part.get("start_has_slope", False),
                             "end_has_slope": part.get("end_has_slope", False),
-                            "has_slope": part.get("start_has_slope", False) or part.get("end_has_slope", False)
+                            "has_slope": part.get("start_has_slope", False) or part.get("end_has_slope", False),
+                            "complementary_pair": comp_pair_flag
                         }
                     })
                     # CRITICAL: Add kerf to current_length if boundaries can't be shared

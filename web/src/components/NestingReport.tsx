@@ -1121,10 +1121,12 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                         const startDev = startCut.deviation || 0
                                         const endDev = endCut.deviation || 0
                                         
+                                        const straightCut: PartEnd = { type: 'straight' as const, rawAngle: null, deviation: null, angleSign: 1 as const }
+                                        
                                         if (startDev > endDev) {
-                                          return { startCut, endCut: { type: 'straight', rawAngle: null, deviation: null, angleSign: 1 } }
+                                          return { startCut, endCut: straightCut }
                                         } else {
-                                          return { startCut: { type: 'straight', rawAngle: null, deviation: null, angleSign: 1 }, endCut }
+                                          return { startCut: straightCut, endCut }
                                         }
                                       }
                                       
@@ -1278,6 +1280,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                 
                                 // Greedy algorithm: iterate through parts and flip if needed to share boundaries
                                 // IMPORTANT: Start from index 1 to preserve first part optimization for waste minimization
+                                // Process pairs (1,2), (2,3), ..., (n-2,n-1) where n=numParts
                                 for (let i = 1; i < numParts - 1; i++) {
                                   const leftIdx = i
                                   const rightIdx = i + 1
@@ -1285,20 +1288,22 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   const leftName = getPartNameForIdx(leftIdx)
                                   const rightName = getPartNameForIdx(rightIdx)
                                   
-                                  // Skip if this is a true complementary pair (different parts, right has complementary_pair flag)
                                   const leftPart = partPositions[leftIdx].part
                                   const rightPart = partPositions[rightIdx].part
+                                  
+                                  // Check if both parts are marked as complementary pairs
+                                  const leftIsComp = (leftPart as any).slope_info?.complementary_pair === true
                                   const rightIsComp = (rightPart as any).slope_info?.complementary_pair === true
+                                  const isComplementaryPair = leftIsComp && rightIsComp
                                   
-                                  // Only skip if it's a TRUE complementary pair: different names AND right has the flag
-                                  if (leftName !== rightName && rightIsComp) {
-                                    console.log(`[FLIP-SKIP] Skipping ${leftIdx}-${rightIdx} because TRUE complementary pair (${leftName} + ${rightName})`)
-                                    continue
-                                  }
+                                  // Debug: log complementary status
+                                  console.log(`[FLIP-CHECK-COMP] ${leftIdx}-${rightIdx} (${leftName} vs ${rightName}): leftIsComp=${leftIsComp}, rightIsComp=${rightIsComp}, isComplementaryPair=${isComplementaryPair}, sameName=${leftName === rightName}`)
                                   
-                                  // Only optimize if parts have the same name (identical parts)
-                                  if (leftName !== rightName) {
-                                    console.log(`[FLIP-SKIP] Skipping ${leftIdx}-${rightIdx} because different names: ${leftName} vs ${rightName}`)
+                                  // Only process if:
+                                  // 1. Both are marked as complementary pairs (backend confirmed they can nest), OR
+                                  // 2. They have the same name (identical parts that might be optimized)
+                                  if (!isComplementaryPair && leftName !== rightName) {
+                                    console.log(`[FLIP-SKIP] Skipping ${leftIdx}-${rightIdx} (${leftName} vs ${rightName}): not complementary and different parts`)
                                     continue
                                   }
                                   
@@ -1314,8 +1319,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   const leftFlipped = partFlipStates[leftIdx]
                                   const rightFlipped = partFlipStates[rightIdx]
                                   
-                                  const leftEndCut = leftFlipped ? leftEnds.startCut : leftEnds.endCut
-                                  const rightStartCut = rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                  const leftEndCut = (leftFlipped ? leftEnds.startCut : leftEnds.endCut) as PartEnd
+                                  const rightStartCut = (rightFlipped ? rightEnds.endCut : rightEnds.startCut) as PartEnd
                                   
                                   console.log(`[FLIP-CHECK] ${leftIdx}(${leftName})-${rightIdx}(${rightName}): leftEnd=${leftEndCut.type}/${leftEndCut.deviation?.toFixed(2)}, rightStart=${rightStartCut.type}/${rightStartCut.deviation?.toFixed(2)}`)
                                   
@@ -1325,7 +1330,7 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   
                                   if (!currentlyShared) {
                                     // Try flipping the right part to see if it helps
-                                    const rightStartCutFlipped = !rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                    const rightStartCutFlipped = (!rightFlipped ? rightEnds.endCut : rightEnds.startCut) as PartEnd
                                     console.log(`[FLIP-CHECK] If flipped, rightStart would be: ${rightStartCutFlipped.type}/${rightStartCutFlipped.deviation?.toFixed(2)}`)
                                     const wouldShareIfFlipped = cutsCanShare(leftEndCut, rightStartCutFlipped)
                                     console.log(`[FLIP-CHECK] Would share if flipped: ${wouldShareIfFlipped}`)
@@ -1346,8 +1351,14 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                   const leftName = getPartNameForIdx(leftIdx)
                                   const rightName = getPartNameForIdx(rightIdx)
                                   
-                                  // Only optimize if parts have the same name (identical parts)
-                                  if (leftName === rightName) {
+                                  const leftPart = partPositions[leftIdx].part
+                                  const rightPart = partPositions[rightIdx].part
+                                  const leftIsComp = (leftPart as any).slope_info?.complementary_pair === true
+                                  const rightIsComp = (rightPart as any).slope_info?.complementary_pair === true
+                                  const isComplementaryPair = leftIsComp && rightIsComp
+                                  
+                                  // Only process if they're complementary pairs OR same-named parts
+                                  if (isComplementaryPair || leftName === rightName) {
                                     const leftEnds = finalPartEnds[leftIdx]
                                     const rightEnds = finalPartEnds[rightIdx]
                                     
@@ -1355,60 +1366,19 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       const leftFlipped = partFlipStates[leftIdx]
                                       const rightFlipped = partFlipStates[rightIdx]
                                       
-                                      const leftEndCut = leftFlipped ? leftEnds.startCut : leftEnds.endCut
-                                      const rightStartCut = rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                      const leftEndCut = (leftFlipped ? leftEnds.startCut : leftEnds.endCut) as PartEnd
+                                      const rightStartCut = (rightFlipped ? rightEnds.endCut : rightEnds.startCut) as PartEnd
                                       
                                       const currentlyShared = cutsCanShare(leftEndCut, rightStartCut)
                                       
                                       if (!currentlyShared) {
                                         // Try flipping ONLY the right part (index 1), never the first
-                                        const rightStartCutFlipped = !rightFlipped ? rightEnds.endCut : rightEnds.startCut
+                                        const rightStartCutFlipped = (!rightFlipped ? rightEnds.endCut : rightEnds.startCut) as PartEnd
                                         const wouldShareIfFlipped = cutsCanShare(leftEndCut, rightStartCutFlipped)
                                         
                                         if (wouldShareIfFlipped) {
                                           partFlipStates[rightIdx] = !partFlipStates[rightIdx]
                                           console.log(`[ORIENTATION] Flipped part ${rightIdx} to share boundary with first part (preserving first part waste optimization)`)
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                                
-                                // CRITICAL FIX: For complementary pairs, check if parts need to be flipped for visualization
-                                // The backend places parts to save material, but the slope_info might be in the "material" orientation
-                                // We need to flip them for visualization so the miter cuts appear at the SHARED boundary
-                                // IMPORTANT: Never flip the first part (index 0) to preserve waste minimization
-                                for (let i = 0; i < numParts - 1; i++) {
-                                  const leftPart = partPositions[i].part
-                                  const rightPart = partPositions[i + 1].part
-                                  const rightIsComp = (rightPart as any)?.slope_info?.complementary_pair === true
-                                  
-                                  if (rightIsComp) {
-                                    // This is a complementary pair - check if they need flipping
-                                    const leftEnds = finalPartEnds[i]
-                                    const rightEnds = finalPartEnds[i + 1]
-                                    
-                                    if (leftEnds && rightEnds) {
-                                      // Check if the miter cuts are at the OUTER edges instead of the shared boundary
-                                      // If left part has miter at START and right part has miter at END, they need flipping
-                                      const leftStartIsMiter = leftEnds.startCut.type === 'miter' && (leftEnds.startCut.deviation || 0) > 0
-                                      const leftEndIsMiter = leftEnds.endCut.type === 'miter' && (leftEnds.endCut.deviation || 0) > 0
-                                      const rightStartIsMiter = rightEnds.startCut.type === 'miter' && (rightEnds.startCut.deviation || 0) > 0
-                                      const rightEndIsMiter = rightEnds.endCut.type === 'miter' && (rightEnds.endCut.deviation || 0) > 0
-                                      
-                                      // If left has miter at START (outer edge) and right has miter at END (outer edge),
-                                      // but they should have miters at the SHARED boundary (left END, right START), flip them
-                                      if (leftStartIsMiter && rightEndIsMiter && !leftEndIsMiter && !rightStartIsMiter) {
-                                        // Special case: If left part is the first part (index 0), only flip the right part
-                                        if (i === 0) {
-                                          console.log(`[COMP-FLIP] Only flipping right part of complementary pair (preserving first part for waste minimization)`)
-                                          partFlipStates[i + 1] = !partFlipStates[i + 1]
-                                          // Note: This may result in non-matching cuts at boundary, but waste minimization takes priority
-                                        } else {
-                                          // For non-first parts, flip both to show miters at shared boundary
-                                          console.log(`[COMP-FLIP] Toggling flip for complementary pair at indices ${i}, ${i+1} to show miters at shared boundary`)
-                                          partFlipStates[i] = !partFlipStates[i]
-                                          partFlipStates[i + 1] = !partFlipStates[i + 1]
                                         }
                                       }
                                     }
@@ -1768,49 +1738,68 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                     
                                     let isShared = false
                                     if (leftEndType === 'straight' && rightStartType === 'straight') {
+                                      // Both sides straight - share the boundary
                                       isShared = true
                                     } else if (leftEndType === 'miter' && rightStartType === 'miter') {
                                       const devDiff = Math.abs(leftDev - rightDev)
-                                      // For complementary pairs with both miters, always treat as shared (they flash together)
-                                      // For regular parts, use angle tolerance
+                                      // Both sides miter - share if they're complementary or angles match
                                       isShared = isComplementaryPair || (devDiff <= DISPLAY_ANGLE_MATCH_TOL)
                                     } else {
-                                      const bothNearStraight = 
-                                        (leftDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING) && 
-                                        (rightDev < NEAR_STRAIGHT_THRESHOLD_FOR_SHARING)
-                                      isShared = bothNearStraight || true // Always share mixed types (parts are flush)
+                                      // Mixed type (miter-straight) - DON'T share, show individual markers
+                                      // These parts can't actually be nested together
+                                      isShared = false
                                     }
                                     
                                     if (isShared) {
                                       sharedBoundarySet.add(boundaryX)
                                       
-                                      // Track shared miter boundaries so both parts render the same diagonal line
+                                      // Track shared boundaries with slopes so both parts render the same line
                                       const leftIsMiter = leftEndType === 'miter' && leftDev > 0
                                       const rightIsMiter = rightStartType === 'miter' && rightDev > 0
+                                      
+                                      // Handle any boundary where at least one side has a miter (slope)
+                                      if (leftIsMiter || rightIsMiter) {
+                                        let ownerSide: 'left' | 'right'
+                                        let ownerDev: number
+                                        let ownerSign: number
+                                        let ownerPartWidth: number
+                                        
                                       if (leftIsMiter && rightIsMiter) {
-                                        const ownerSide = 'left'
-                                        const ownerDev = leftDev
-                                        const ownerSign = leftSign
-                                        // Calculate the left part's width in pixels
-                                        const leftPartWidth = Math.floor(partPositions[leftPartIdx].xEnd - partPositions[leftPartIdx].xStart)
-                                        const offset = calcBoundaryOffset(ownerDev, leftPartWidth)
+                                          // Both sides are miters - use left side as owner
+                                          ownerSide = 'left'
+                                          ownerDev = leftDev
+                                          ownerSign = leftSign
+                                          ownerPartWidth = Math.floor(partPositions[leftPartIdx].xEnd - partPositions[leftPartIdx].xStart)
+                                        } else if (leftIsMiter) {
+                                          // Only left side is miter - use left side as owner
+                                          ownerSide = 'left'
+                                          ownerDev = leftDev
+                                          ownerSign = leftSign
+                                          ownerPartWidth = Math.floor(partPositions[leftPartIdx].xEnd - partPositions[leftPartIdx].xStart)
+                                        } else {
+                                          // Only right side is miter - use right side as owner
+                                          ownerSide = 'right'
+                                          ownerDev = rightDev
+                                          ownerSign = rightSign
+                                          ownerPartWidth = Math.floor(partPositions[rightPartIdx].xEnd - partPositions[rightPartIdx].xStart)
+                                        }
+                                        
+                                        const offset = calcBoundaryOffset(ownerDev, ownerPartWidth)
                                         const baseX = boundaryX + 0.5
                                         
-                                        // Use left part's end geometry as the shared line
+                                        // Calculate shared line coordinates based on owner's geometry
                                         const xTop = ownerSign >= 0 ? baseX - offset : baseX
                                         const xBottom = ownerSign >= 0 ? baseX : baseX - offset
                                         
                                         sharedMiterBoundaryMap.set(boundaryX, { xTop, xBottom })
+                                        console.log(`[MITER-BOUNDARY-MAP] ${leftPartName}-${rightPartName}: boundaryX=${boundaryX}, xTop=${xTop.toFixed(2)}, xBottom=${xBottom.toFixed(2)}, offset=${offset.toFixed(2)}, owner=${ownerSide}`)
                                       }
                                       
-                                      // Debug log for b34, b37, b38 boundaries
-                                      if (leftPartName === 'b34' || leftPartName === 'b37' || leftPartName === 'b38' ||
-                                          rightPartName === 'b34' || rightPartName === 'b37' || rightPartName === 'b38') {
+                                      // Debug log for ALL boundaries
                                         try {
                                           console.log(`[SHARED-SET-ADD] ${leftPartName}-${rightPartName}: boundaryX=${boundaryX}, leftEndType=${leftEndType}, rightStartType=${rightStartType}`)
                                         } catch (e) {
                                           // Ignore
-                                        }
                                       }
                                     }
                                   }
@@ -1948,8 +1937,8 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       let startIsShared = false
                                       let endIsShared = false
                                       
-                                      // Debug log for b34, b37, b38
-                                      const shouldDebugPart = partName === 'b34' || partName === 'b37' || partName === 'b38'
+                                      // Debug log for ALL parts
+                                      const shouldDebugPart = true
                                       
                                       // Check start boundary (shared with previous part)
                                       if (partIdx > 0) {
@@ -1969,8 +1958,9 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                       // Debug log for b34, b37, b38
                                       if (shouldDebugPart) {
                                         try {
-                                          const startBoundaryX = partIdx > 0 ? Math.round(xStart) : null
-                                          const endBoundaryX = partIdx < numParts - 1 ? Math.round(partPositions[partIdx + 1].xStart) : null
+                                          // Use SAME calculation as the actual boundary check (Math.floor of previous part's xEnd)
+                                          const startBoundaryX = partIdx > 0 ? Math.floor(partPositions[partIdx - 1].xEnd) : null
+                                          const endBoundaryX = partIdx < numParts - 1 ? Math.floor(partPositions[partIdx].xEnd) : null
                                           const startInSet = startBoundaryX !== null ? sharedBoundarySet.has(startBoundaryX) : null
                                           const endInSet = endBoundaryX !== null ? sharedBoundarySet.has(endBoundaryX) : null
                                           
@@ -2135,13 +2125,28 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               bottomRightX = clampX(actualRightX)
                                             }
                                             
-                                            // If this boundary is a shared complementary miter, force both parts to use the same line
+                                            // If this boundary is shared and THIS SIDE has a miter, use the shared line coordinates
+                                            // For straight edges at shared boundaries, keep them straight but align to the boundary
                                             if (startIsShared && startType === 'miter' && partIdx > 0) {
                                               const boundaryX = Math.floor(partPositions[partIdx - 1].xEnd)
                                               const sharedLine = sharedMiterBoundaryMap.get(boundaryX)
                                               if (sharedLine) {
+                                                console.log(`[MITER-LOOKUP-START] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, found sharedLine xTop=${sharedLine.xTop.toFixed(2)} xBottom=${sharedLine.xBottom.toFixed(2)}`)
                                                 topLeftX = clampX(sharedLine.xTop)
                                                 bottomLeftX = clampX(sharedLine.xBottom)
+                                              } else {
+                                                console.log(`[MITER-LOOKUP-START] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, NO sharedLine found`)
+                                              }
+                                            } else if (startIsShared && startType === 'straight' && partIdx > 0) {
+                                              // For straight edges at shared boundaries, align to the boundary coordinate
+                                              const boundaryX = Math.floor(partPositions[partIdx - 1].xEnd)
+                                              const sharedLine = sharedMiterBoundaryMap.get(boundaryX)
+                                              if (sharedLine) {
+                                                // Use the average of the shared line coordinates to keep it straight
+                                                const straightX = clampX((sharedLine.xTop + sharedLine.xBottom) / 2)
+                                                console.log(`[STRAIGHT-LOOKUP-START] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, using straightX=${straightX.toFixed(2)}`)
+                                                topLeftX = straightX
+                                                bottomLeftX = straightX
                                               }
                                             }
                                             
@@ -2149,8 +2154,22 @@ export default function NestingReport({ filename, nestingReport: propNestingRepo
                                               const boundaryX = Math.floor(partPositions[partIdx].xEnd)
                                               const sharedLine = sharedMiterBoundaryMap.get(boundaryX)
                                               if (sharedLine) {
+                                                console.log(`[MITER-LOOKUP-END] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, found sharedLine xTop=${sharedLine.xTop.toFixed(2)} xBottom=${sharedLine.xBottom.toFixed(2)}`)
                                                 topRightX = clampX(sharedLine.xTop)
                                                 bottomRightX = clampX(sharedLine.xBottom)
+                                              } else {
+                                                console.log(`[MITER-LOOKUP-END] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, NO sharedLine found`)
+                                              }
+                                            } else if (endIsShared && endType === 'straight' && partIdx < numParts - 1) {
+                                              // For straight edges at shared boundaries, align to the boundary coordinate
+                                              const boundaryX = Math.floor(partPositions[partIdx].xEnd)
+                                              const sharedLine = sharedMiterBoundaryMap.get(boundaryX)
+                                              if (sharedLine) {
+                                                // Use the average of the shared line coordinates to keep it straight
+                                                const straightX = clampX((sharedLine.xTop + sharedLine.xBottom) / 2)
+                                                console.log(`[STRAIGHT-LOOKUP-END] Part ${partIdx} (${partName}): boundaryX=${boundaryX}, using straightX=${straightX.toFixed(2)}`)
+                                                topRightX = straightX
+                                                bottomRightX = straightX
                                               }
                                             }
                                             

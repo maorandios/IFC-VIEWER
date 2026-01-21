@@ -42,6 +42,8 @@ export interface NestingPart {
   assembly_mark?: string
   element_name?: string
   reference?: string
+  start_angle?: number  // Angle of start cut
+  end_angle?: number  // Angle of end cut
 }
 
 export interface CuttingPattern {
@@ -50,6 +52,14 @@ export interface CuttingPattern {
     part: NestingPart
     cut_position: number  // Start position on stock bar in mm
     length: number  // in mm
+    slope_info?: {
+      start_angle?: number
+      end_angle?: number
+      start_has_slope?: boolean
+      end_has_slope?: boolean
+      has_slope?: boolean
+      complementary_pair?: boolean
+    }
   }>
   waste: number  // Waste length in mm
   waste_percentage: number
