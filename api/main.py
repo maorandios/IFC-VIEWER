@@ -48,8 +48,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     
     error_msg = str(exc)
     error_trace = traceback.format_exc()
-    print(f"[ERROR] Unhandled exception in {request.url.path}: {error_msg}")
-    print(f"[ERROR] Traceback:\n{error_trace}")
+    # Handle Unicode encoding for Windows console
+    safe_error_msg = error_msg.encode('ascii', 'replace').decode('ascii')
+    safe_error_trace = error_trace.encode('ascii', 'replace').decode('ascii')
+    print(f"[ERROR] Unhandled exception in {request.url.path}: {safe_error_msg}")
+    print(f"[ERROR] Traceback:\n{safe_error_trace}")
     return JSONResponse(
         status_code=500,
         content={"detail": f"Internal server error: {error_msg}"}
@@ -86,7 +89,19 @@ ENABLE_NESTING_LOGS = True
 def nesting_log(*args, **kwargs):
     """Print nesting log messages only if ENABLE_NESTING_LOGS is True."""
     if ENABLE_NESTING_LOGS:
-        print(*args, **kwargs)
+        # Handle Unicode encoding for Windows console by converting to safe ASCII first
+        safe_args = []
+        for arg in args:
+            if isinstance(arg, str):
+                # Replace any non-ASCII characters with '?'
+                safe_args.append(arg.encode('ascii', 'replace').decode('ascii'))
+            else:
+                safe_args.append(arg)
+        try:
+            print(*safe_args, **kwargs)
+        except Exception as e:
+            # Ultimate fallback: just don't print
+            pass
 
 
 def sanitize_filename(filename: str) -> str:
@@ -2261,11 +2276,15 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             # High confidence threshold for general slope detection
                             # Only consider it a slope if:
                             # 1. Deviation from straight is significant (> 1°)
-                            # 2. Confidence is high enough (> 0.5) to trust the measurement
-                            start_has_slope = deviation_from_straight > 1.0 and start_confidence > 0.5
+                            # 2. Confidence is high enough (> 0.3) to trust the measurement (lowered from 0.5 to detect 3° slopes)
+                            start_has_slope = deviation_from_straight > 1.0 and start_confidence > 0.3
                             
                             # Store deviation for later dual-slope check
                             start_deviation_value = deviation_from_straight
+                            
+                            # Log if slope was rejected due to low confidence
+                            if deviation_from_straight > 1.0 and start_confidence <= 0.3:
+                                nesting_log(f"[NESTING]   START slope rejected: deviation={deviation_from_straight:.2f}° but confidence={start_confidence:.2f} (< 0.3)")
                             
                             # Debug for b32/b30
                             part_ref = element.Name if hasattr(element, 'Name') else str(element.id())
@@ -2294,11 +2313,15 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                             # High confidence threshold for general slope detection
                             # Only consider it a slope if:
                             # 1. Deviation from straight is significant (> 1°)
-                            # 2. Confidence is high enough (> 0.5) to trust the measurement
-                            end_has_slope = deviation_from_straight > 1.0 and end_confidence > 0.5
+                            # 2. Confidence is high enough (> 0.3) to trust the measurement (lowered from 0.5 to detect 3° slopes)
+                            end_has_slope = deviation_from_straight > 1.0 and end_confidence > 0.3
                             
                             # Store deviation for later dual-slope check
                             end_deviation_value = deviation_from_straight
+                            
+                            # Log if slope was rejected due to low confidence
+                            if deviation_from_straight > 1.0 and end_confidence <= 0.3:
+                                nesting_log(f"[NESTING]   END slope rejected: deviation={deviation_from_straight:.2f}° but confidence={end_confidence:.2f} (< 0.3)")
                             
                             # Special case: Short parts with BOTH ends having similar low-confidence angles
                             # This often indicates potential complementary pairing
@@ -3352,7 +3375,157 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 # If pattern is empty (no parts added yet), choose the best starting part
                 if len(pattern_parts) == 0 and len(remaining_parts_sorted) > 0:
                     # Only calculate flush score for small lists to avoid O(n²) performance issues
-                    if len(remaining_parts_sorted) <= 50:
+                    # Try look-ahead: simulate patterns with different starting parts and pick the best
+                    # Use first 20 parts for look-ahead even if list is longer (to make it work for large profiles)
+                    parts_to_consider = remaining_parts_sorted[:20] if len(remaining_parts_sorted) > 20 else remaining_parts_sorted
+                    
+                    if len(parts_to_consider) >= 3:
+                        # LOOK-AHEAD STRATEGY: Try different starting parts and simulate the pattern
+                        # Pick the configuration that results in minimum waste
+                        nesting_log(f"[NESTING] Using look-ahead strategy on {len(parts_to_consider)} parts: trying up to 5 different starting configurations")
+                        
+                        best_configuration = None
+                        best_waste = float('inf')
+                        candidates_to_try = min(5, len(parts_to_consider))  # Try top 5 candidates
+                        
+                        # First, filter out parts with START slopes (they're bad starting parts)
+                        straight_start_parts = [p for p in parts_to_consider if not p.get("start_has_slope", False)]
+                        slope_start_parts = [p for p in parts_to_consider if p.get("start_has_slope", False)]
+                        
+                        # Prioritize trying straight-start parts
+                        candidates = (straight_start_parts[:candidates_to_try] + slope_start_parts)[:candidates_to_try]
+                        
+                        for trial_start_part in candidates:
+                            # Simulate: how many parts can we fit if we start with this part?
+                            simulated_length = trial_start_part["length"]
+                            simulated_parts = [trial_start_part]
+                            simulated_remaining = [p for p in parts_to_consider if p != trial_start_part]
+                            
+                            prev_end_slope = trial_start_part.get("end_has_slope", False)
+                            prev_end_angle = trial_start_part.get("end_angle")
+                            
+                            # CRITICAL: Sort simulated_remaining to prioritize parts that can flush with prev part
+                            can_flush_sim = []
+                            cannot_flush_sim = []
+                            for p in simulated_remaining:
+                                p_start_slope = p.get("start_has_slope", False)
+                                p_start_angle = p.get("start_angle")
+                                can_share = False
+                                if not prev_end_slope and not p_start_slope:
+                                    can_share = True
+                                elif prev_end_slope and p_start_slope:
+                                    if prev_end_angle is not None and p_start_angle is not None:
+                                        angle_diff = abs(abs(prev_end_angle) - abs(p_start_angle))
+                                        if angle_diff <= 2.0:
+                                            can_share = True
+                                if can_share:
+                                    can_flush_sim.append(p)
+                                else:
+                                    cannot_flush_sim.append(p)
+                            
+                            # Prioritize flushable parts, then sort each group by length descending
+                            can_flush_sim.sort(key=lambda x: x["length"], reverse=True)
+                            cannot_flush_sim.sort(key=lambda x: x["length"], reverse=True)
+                            simulated_remaining_sorted = can_flush_sim + cannot_flush_sim
+                            
+                            # Greedily add parts that can flush with previous part
+                            max_parts_to_try = 10
+                            parts_added = 0
+                            while parts_added < max_parts_to_try and simulated_remaining_sorted:
+                                # Re-sort remaining parts to prioritize those that flush with current prev_part
+                                can_flush_now = []
+                                cannot_flush_now = []
+                                for p in simulated_remaining_sorted:
+                                    if p in simulated_parts:
+                                        continue
+                                    p_start_slope = p.get("start_has_slope", False)
+                                    p_start_angle = p.get("start_angle")
+                                    p_end_slope = p.get("end_has_slope", False)
+                                    p_end_angle = p.get("end_angle")
+                                    
+                                    # Check if part can share in current orientation
+                                    can_share = False
+                                    if not prev_end_slope and not p_start_slope:
+                                        can_share = True
+                                    elif prev_end_slope and p_start_slope:
+                                        if prev_end_angle is not None and p_start_angle is not None:
+                                            angle_diff = abs(abs(prev_end_angle) - abs(p_start_angle))
+                                            if angle_diff <= 2.0:
+                                                can_share = True
+                                    
+                                    # If can't share, check if FLIPPING would help
+                                    if not can_share:
+                                        # Check flipped orientation (swap start with end)
+                                        flipped_start_slope = p_end_slope
+                                        flipped_start_angle = p_end_angle
+                                        if not prev_end_slope and not flipped_start_slope:
+                                            can_share = True  # Flipping helps!
+                                        elif prev_end_slope and flipped_start_slope:
+                                            if prev_end_angle is not None and flipped_start_angle is not None:
+                                                angle_diff = abs(abs(prev_end_angle) - abs(flipped_start_angle))
+                                                if angle_diff <= 2.0:
+                                                    can_share = True  # Flipping helps!
+                                    
+                                    if can_share:
+                                        can_flush_now.append(p)
+                                    else:
+                                        cannot_flush_now.append(p)
+                                
+                                # Try flushable parts first
+                                next_candidates = can_flush_now + cannot_flush_now
+                                if not next_candidates:
+                                    break
+                                
+                                next_part = next_candidates[0]
+                                next_start_slope = next_part.get("start_has_slope", False)
+                                
+                                # Calculate kerf
+                                kerf = 3.0  # Default kerf
+                                if next_part in can_flush_now:
+                                    kerf = 0.0  # Can flush, no kerf
+                                
+                                new_length = simulated_length + next_part["length"] + kerf
+                                if new_length <= best_stock:
+                                    simulated_length = new_length
+                                    simulated_parts.append(next_part)
+                                    prev_end_slope = next_part.get("end_has_slope", False)
+                                    prev_end_angle = next_part.get("end_angle")
+                                    parts_added += 1
+                                else:
+                                    break  # Can't fit more parts
+                            
+                            # Calculate waste for this configuration
+                            waste = best_stock - simulated_length
+                            nesting_log(f"[NESTING] Trial start with part (length={trial_start_part['length']:.0f}mm): {len(simulated_parts)} parts, waste={waste:.0f}mm")
+                            
+                            # Pick configuration with minimum waste (or maximum parts if waste is similar)
+                            if waste < best_waste or (abs(waste - best_waste) < 10 and len(simulated_parts) > len(best_configuration) if best_configuration else False):
+                                best_waste = waste
+                                best_configuration = simulated_parts
+                        
+                        # Use the best configuration found - reorder remaining_parts_sorted to follow it
+                        if best_configuration:
+                            best_start_part = best_configuration[0]
+                            nesting_log(f"[NESTING] Look-ahead selected: Start with part (length={best_start_part['length']:.0f}mm), predicted {len(best_configuration)} parts, waste={best_waste:.0f}mm")
+                            
+                            # CRITICAL: Reorder remaining_parts_sorted to follow the best configuration order
+                            # Put the simulated parts in order, then add the rest sorted by length
+                            # Use both id() and length matching for robustness
+                            config_ids = {id(p): p for p in best_configuration}
+                            remaining_not_in_config = []
+                            for p in remaining_parts_sorted:
+                                if id(p) not in config_ids:
+                                    remaining_not_in_config.append(p)
+                            remaining_not_in_config.sort(key=lambda p: p["length"], reverse=True)
+                            remaining_parts_sorted = list(best_configuration) + remaining_not_in_config
+                            nesting_log(f"[NESTING] *** LOOK-AHEAD APPLIED *** Reordered parts: {len(best_configuration)} from optimal config (lengths: {[p['length'] for p in best_configuration[:5]]}...), then {len(remaining_not_in_config)} others by length")
+                        else:
+                            best_start_part = None
+                        
+                        best_flush_score = 100  # Set high score so we don't re-sort below
+                        best_start_part = "LOOKAHEAD_APPLIED"  # Marker to skip re-sorting below
+                    
+                    elif len(remaining_parts_sorted) <= 50:
                         # Calculate "flush score" for each part as a potential starting part
                         # Flush score = how many other parts can share boundaries with this part
                         best_start_part = None
@@ -3360,31 +3533,42 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         
                         for candidate_idx, candidate in enumerate(remaining_parts_sorted):
                             flush_score = 0
+                            candidate_start_slope = candidate.get("start_has_slope", False)
+                            candidate_start_angle = candidate.get("start_angle")
                             candidate_end_slope = candidate.get("end_has_slope", False)
                             candidate_end_angle = candidate.get("end_angle")
                             
-                            # Check how many other parts can share boundary with this candidate's end
-                            for other_idx, other in enumerate(remaining_parts_sorted):
-                                if candidate_idx == other_idx:
-                                    continue
-                                
-                                other_start_slope = other.get("start_has_slope", False)
-                                other_start_angle = other.get("start_angle")
-                                
-                                # Check if they can share boundary
-                                can_share = False
-                                if not candidate_end_slope and not other_start_slope:
-                                    # Both straight - can share
-                                    can_share = True
-                                elif candidate_end_slope and other_start_slope:
-                                    # Both sloped - check if complementary
-                                    if candidate_end_angle is not None and other_start_angle is not None:
-                                        angle_diff = abs(abs(candidate_end_angle) - abs(other_start_angle))
-                                        if angle_diff <= 2.0:
-                                            can_share = True
-                                
-                                if can_share:
-                                    flush_score += 1
+                            # CRITICAL: Heavily penalize parts with START slope as first part
+                            # A sloped start creates waste at the beginning of the bar
+                            if candidate_start_slope:
+                                # Check if this start slope has a complementary match that could be placed BEFORE it
+                                # (which is impossible since this would be the first part)
+                                # So any start slope on first part = guaranteed waste
+                                flush_score = -1000  # Heavy penalty
+                                nesting_log(f"[NESTING] Candidate part has START slope - penalizing heavily as first part (creates waste)")
+                            else:
+                                # Check how many other parts can share boundary with this candidate's end
+                                for other_idx, other in enumerate(remaining_parts_sorted):
+                                    if candidate_idx == other_idx:
+                                        continue
+                                    
+                                    other_start_slope = other.get("start_has_slope", False)
+                                    other_start_angle = other.get("start_angle")
+                                    
+                                    # Check if they can share boundary
+                                    can_share = False
+                                    if not candidate_end_slope and not other_start_slope:
+                                        # Both straight - can share
+                                        can_share = True
+                                    elif candidate_end_slope and other_start_slope:
+                                        # Both sloped - check if complementary
+                                        if candidate_end_angle is not None and other_start_angle is not None:
+                                            angle_diff = abs(abs(candidate_end_angle) - abs(other_start_angle))
+                                            if angle_diff <= 2.0:
+                                                can_share = True
+                                    
+                                    if can_share:
+                                        flush_score += 1
                             
                             # Prefer parts with higher flush score, use length as tiebreaker
                             if flush_score > best_flush_score or (flush_score == best_flush_score and (best_start_part is None or candidate["length"] > best_start_part["length"])):
@@ -3404,11 +3588,81 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                         # For large lists, skip flush score calculation and just sort by length
                         remaining_parts_sorted.sort(key=lambda p: p["length"], reverse=True)
                         nesting_log(f"[NESTING] Step 2: Large part count ({len(remaining_parts_sorted)}), using simple length-based sorting for performance")
+                        best_flush_score = 0  # Mark that we sorted
                 else:
-                    # Pattern already has parts, sort remaining by length descending
-                    # This allows us to try larger parts first, then smaller ones with continue (not break)
-                    remaining_parts_sorted.sort(key=lambda p: p["length"], reverse=True)
-                    nesting_log(f"[NESTING] Step 2: Sorted {len(remaining_parts_sorted)} remaining parts by length descending (will continue trying smaller parts if larger don't fit)")
+                    # Pattern already has parts, prioritize parts that can flush with the last part
+                    if len(pattern_parts) > 0 and len(remaining_parts_sorted) > 0:
+                        prev_part = pattern_parts[-1]
+                        prev_slope_info = prev_part.get("slope_info", {})
+                        prev_end_has_slope = prev_slope_info.get("end_has_slope", False)
+                        prev_end_angle = prev_slope_info.get("end_angle")
+                        
+                        # Separate parts that can flush from those that can't
+                        can_flush = []
+                        cannot_flush = []
+                        
+                        for p in remaining_parts_sorted:
+                            curr_start_has_slope = p.get("start_has_slope", False)
+                            curr_start_angle = p.get("start_angle")
+                            
+                            # Check if this part can share boundary with previous part
+                            shares_boundary = False
+                            if not prev_end_has_slope and not curr_start_has_slope:
+                                shares_boundary = True  # Both straight
+                            elif prev_end_has_slope and curr_start_has_slope:
+                                if prev_end_angle is not None and curr_start_angle is not None:
+                                    angle_diff = abs(abs(prev_end_angle) - abs(curr_start_angle))
+                                    if angle_diff <= 2.0:
+                                        shares_boundary = True  # Complementary slopes
+                            
+                            if shares_boundary:
+                                can_flush.append(p)
+                            else:
+                                cannot_flush.append(p)
+                        
+                        # Further separate cannot_flush into those with unpaired end slopes (should go last)
+                        # Parts with unpaired END slopes should be placed last so their slope counts as end waste
+                        cannot_flush_with_unpaired_end = []
+                        cannot_flush_normal = []
+                        
+                        for p in cannot_flush:
+                            p_end_slope = p.get("end_has_slope", False)
+                            p_end_angle = p.get("end_angle")
+                            
+                            if p_end_slope:
+                                # Check if this end slope has a complement in remaining parts
+                                has_complement = False
+                                for other in remaining_parts_sorted:
+                                    if p == other:
+                                        continue
+                                    other_start_slope = other.get("start_has_slope", False)
+                                    other_start_angle = other.get("start_angle")
+                                    if other_start_slope and p_end_angle is not None and other_start_angle is not None:
+                                        angle_diff = abs(abs(p_end_angle) - abs(other_start_angle))
+                                        if angle_diff <= 2.0:
+                                            has_complement = True
+                                            break
+                                
+                                if not has_complement:
+                                    cannot_flush_with_unpaired_end.append(p)
+                                else:
+                                    cannot_flush_normal.append(p)
+                            else:
+                                cannot_flush_normal.append(p)
+                        
+                        # Sort each group by length descending, then prioritize flushable parts
+                        can_flush.sort(key=lambda p: p["length"], reverse=True)
+                        cannot_flush_normal.sort(key=lambda p: p["length"], reverse=True)
+                        cannot_flush_with_unpaired_end.sort(key=lambda p: p["length"], reverse=True)
+                        
+                        # Order: flushable first, then normal non-flushable, then unpaired end slopes last
+                        remaining_parts_sorted = can_flush + cannot_flush_normal + cannot_flush_with_unpaired_end
+                        
+                        nesting_log(f"[NESTING] Step 2: Prioritized {len(can_flush)} flushable, {len(cannot_flush_normal)} normal, {len(cannot_flush_with_unpaired_end)} unpaired-end-slope parts (last)")
+                    else:
+                        # No previous part, just sort by length
+                        remaining_parts_sorted.sort(key=lambda p: p["length"], reverse=True)
+                        nesting_log(f"[NESTING] Step 2: Sorted {len(remaining_parts_sorted)} remaining parts by length descending")
                 
                 for part in remaining_parts_sorted:
                     if part in parts_to_remove:
@@ -3469,10 +3723,48 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                                     if (prev_end_angle > 0 and curr_start_angle < 0) or (prev_end_angle < 0 and curr_start_angle > 0):
                                         can_share = True
                         
-                        # If boundaries can't be shared, add kerf (typical kerf for steel cutting: 2-5mm)
+                        # If boundaries can't be shared, CHECK IF FLIPPING THE PART WOULD HELP
                         if not can_share:
-                            kerf_mm = 3.0  # Standard kerf for steel cutting (adjust as needed)
-                            nesting_log(f"[NESTING] Parts cannot share boundary - adding {kerf_mm:.1f}mm kerf")
+                            # Try flipping the part: swap start and end
+                            flipped_start_has_slope = curr_slope_info.get("end_has_slope", False)
+                            flipped_start_angle = curr_slope_info.get("end_angle")
+                            
+                            # Check if flipped part CAN share boundary with previous part
+                            can_share_if_flipped = False
+                            if not prev_end_has_slope and not flipped_start_has_slope:
+                                can_share_if_flipped = True  # Both straight
+                            elif prev_end_has_slope and flipped_start_has_slope:
+                                if prev_end_angle is not None and flipped_start_angle is not None:
+                                    angle_diff = abs(abs(prev_end_angle) - abs(flipped_start_angle))
+                                    if angle_diff <= 2.0:
+                                        if (prev_end_angle > 0 and flipped_start_angle < 0) or (prev_end_angle < 0 and flipped_start_angle > 0):
+                                            can_share_if_flipped = True
+                            
+                            # If flipping helps, FLIP THE PART!
+                            if can_share_if_flipped:
+                                nesting_log(f"[NESTING] Flipping part to enable boundary sharing (swap start<->end)")
+                                # Swap start and end properties
+                                part["start_angle"], part["end_angle"] = part.get("end_angle"), part.get("start_angle")
+                                part["start_has_slope"], part["end_has_slope"] = part.get("end_has_slope", False), part.get("start_has_slope", False)
+                                part["flipped"] = True
+                                # Update curr_slope_info for this iteration
+                                curr_slope_info["start_angle"] = part["start_angle"]
+                                curr_slope_info["end_angle"] = part["end_angle"]
+                                curr_slope_info["start_has_slope"] = part["start_has_slope"]
+                                curr_slope_info["end_has_slope"] = part["end_has_slope"]
+                                curr_start_has_slope = part["start_has_slope"]
+                                can_share = True  # Now it can share!
+                                kerf_mm = 0.0
+                            else:
+                                # Can't flip to help, add kerf
+                                kerf_mm = 3.0  # Standard kerf for steel cutting (adjust as needed)
+                                nesting_log(f"[NESTING] Parts cannot share boundary - adding {kerf_mm:.1f}mm kerf")
+                        else:
+                            # Already can share, no kerf needed
+                            kerf_mm = 0.0
+                    else:
+                        # No previous part, no kerf needed
+                        kerf_mm = 0.0
                     
                     # STRICT VALIDATION: Check if adding this part (with kerf if needed) would exceed stock
                     new_length = current_length + part_length + kerf_mm  # Add kerf if boundaries can't be shared
