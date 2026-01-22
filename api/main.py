@@ -589,7 +589,9 @@ def analyze_ifc(file_path: Path) -> Dict[str, Any]:
     """Analyze IFC file and extract steel information."""
     print(f"[ANALYZE] ===== STARTING ANALYSIS FOR {file_path.name} =====")
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         print(f"[ANALYZE] IFC file opened successfully")
     except Exception as e:
         print(f"[ANALYZE] ERROR: Failed to open IFC file: {e}")
@@ -911,7 +913,9 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
         import trimesh
         import numpy as np
         
-        ifc_file = ifcopenshell.open(str(ifc_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_ifc_path = ifc_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_ifc_path))
         
         # Settings for geometry extraction
         # Use WORLD_COORDS to get consistent coordinate system
@@ -1701,7 +1705,9 @@ def analyze_fastener_structure(ifc_path: Path):
     import ifcopenshell.util.element
     from collections import Counter
     
-    ifc_file = ifcopenshell.open(str(ifc_path))
+    # Resolve path to absolute for Windows compatibility
+    resolved_ifc_path = ifc_path.resolve()
+    ifc_file = ifcopenshell.open(str(resolved_ifc_path))
     
     print(f"\n=== Analyzing IFC file: {ifc_path.name} ===\n")
     
@@ -1822,7 +1828,9 @@ async def debug_assembly_structure(filename: str):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         # Get a sample of products to inspect
         products = list(ifc_file.by_type("IfcProduct"))[:10]  # First 10 products
@@ -1924,7 +1932,9 @@ async def inspect_entity(filename: str, entity_id: int):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         # Try to get entity by ID
         try:
@@ -2036,7 +2046,9 @@ async def get_assembly_mapping(filename: str):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         # Build mapping: product_id -> assembly info (mark + assembly_id)
         mapping = {}
@@ -2191,8 +2203,9 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
         nesting_log(f"[NESTING] Normalized base profile names: {selected_profiles}")
         nesting_log(f"[NESTING] Profile name mapping: {profile_name_mapping}")
         
-        # Open IFC file
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Open IFC file - resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         nesting_log(f"[NESTING] Opened IFC file: {decoded_filename}")
         
         # Import cut piece extractor for slope detection
@@ -4149,7 +4162,9 @@ async def debug_assembly_name(filename: str, product_id: int = None):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         # Get a sample of products
         products = []
@@ -4206,7 +4221,9 @@ async def debug_assembly_grouping(filename: str, product_id: int = None):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         result = {
             "filename": decoded_filename,
@@ -4424,7 +4441,9 @@ async def debug_profile_extraction(filename: str):
         raise HTTPException(status_code=404, detail="IFC file not found")
     
     try:
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         
         # Get a sample of beams/columns/members
         elements = []
@@ -4555,7 +4574,9 @@ async def get_assembly_parts(filename: str, product_id: int = None, assembly_mar
     
     try:
         print(f"[ASSEMBLY-PARTS] Opening IFC file...")
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         print(f"[ASSEMBLY-PARTS] IFC file opened successfully")
         product_ids = []
         
@@ -4885,7 +4906,9 @@ async def get_element_full(element_id: int, filename: str):
     
     try:
         print(f"[ELEMENT-FULL] Opening IFC file: {file_path}")
-        ifc_file = ifcopenshell.open(str(file_path))
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
         print(f"[ELEMENT-FULL] IFC file opened successfully, looking for entity ID: {element_id}")
         
         # Try to get entity by ID
