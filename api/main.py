@@ -2519,7 +2519,7 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
             rejected_parts = []  # Track parts that cannot be nested (exceed stock length)
             
             remaining_parts = parts.copy()
-            max_iterations = len(parts) * 10  # Safety limit
+            max_iterations = min(len(parts) * 3, 500)  # Reduced safety limit to prevent infinite loops
             iteration_count = 0
             
             while remaining_parts and iteration_count < max_iterations:
@@ -3351,53 +3351,59 @@ async def generate_nesting(filename: str, stock_lengths: str, profiles: str):
                 
                 # If pattern is empty (no parts added yet), choose the best starting part
                 if len(pattern_parts) == 0 and len(remaining_parts_sorted) > 0:
-                    # Calculate "flush score" for each part as a potential starting part
-                    # Flush score = how many other parts can share boundaries with this part
-                    best_start_part = None
-                    best_flush_score = -1
-                    
-                    for candidate_idx, candidate in enumerate(remaining_parts_sorted):
-                        flush_score = 0
-                        candidate_end_slope = candidate.get("end_has_slope", False)
-                        candidate_end_angle = candidate.get("end_angle")
+                    # Only calculate flush score for small lists to avoid O(n²) performance issues
+                    if len(remaining_parts_sorted) <= 50:
+                        # Calculate "flush score" for each part as a potential starting part
+                        # Flush score = how many other parts can share boundaries with this part
+                        best_start_part = None
+                        best_flush_score = -1
                         
-                        # Check how many other parts can share boundary with this candidate's end
-                        for other_idx, other in enumerate(remaining_parts_sorted):
-                            if candidate_idx == other_idx:
-                                continue
+                        for candidate_idx, candidate in enumerate(remaining_parts_sorted):
+                            flush_score = 0
+                            candidate_end_slope = candidate.get("end_has_slope", False)
+                            candidate_end_angle = candidate.get("end_angle")
                             
-                            other_start_slope = other.get("start_has_slope", False)
-                            other_start_angle = other.get("start_angle")
+                            # Check how many other parts can share boundary with this candidate's end
+                            for other_idx, other in enumerate(remaining_parts_sorted):
+                                if candidate_idx == other_idx:
+                                    continue
+                                
+                                other_start_slope = other.get("start_has_slope", False)
+                                other_start_angle = other.get("start_angle")
+                                
+                                # Check if they can share boundary
+                                can_share = False
+                                if not candidate_end_slope and not other_start_slope:
+                                    # Both straight - can share
+                                    can_share = True
+                                elif candidate_end_slope and other_start_slope:
+                                    # Both sloped - check if complementary
+                                    if candidate_end_angle is not None and other_start_angle is not None:
+                                        angle_diff = abs(abs(candidate_end_angle) - abs(other_start_angle))
+                                        if angle_diff <= 2.0:
+                                            can_share = True
+                                
+                                if can_share:
+                                    flush_score += 1
                             
-                            # Check if they can share boundary
-                            can_share = False
-                            if not candidate_end_slope and not other_start_slope:
-                                # Both straight - can share
-                                can_share = True
-                            elif candidate_end_slope and other_start_slope:
-                                # Both sloped - check if complementary
-                                if candidate_end_angle is not None and other_start_angle is not None:
-                                    angle_diff = abs(abs(candidate_end_angle) - abs(other_start_angle))
-                                    if angle_diff <= 2.0:
-                                        can_share = True
-                            
-                            if can_share:
-                                flush_score += 1
+                            # Prefer parts with higher flush score, use length as tiebreaker
+                            if flush_score > best_flush_score or (flush_score == best_flush_score and (best_start_part is None or candidate["length"] > best_start_part["length"])):
+                                best_flush_score = flush_score
+                                best_start_part = candidate
                         
-                        # Prefer parts with higher flush score, use length as tiebreaker
-                        if flush_score > best_flush_score or (flush_score == best_flush_score and (best_start_part is None or candidate["length"] > best_start_part["length"])):
-                            best_flush_score = flush_score
-                            best_start_part = candidate
-                    
-                    # Reorder to put best starting part first
-                    if best_start_part is not None and best_flush_score > 0:
-                        remaining_parts_sorted.remove(best_start_part)
-                        remaining_parts_sorted.insert(0, best_start_part)
-                        nesting_log(f"[NESTING] Step 2: Chose optimal starting part (flush_score={best_flush_score}) to maximize boundary sharing")
+                        # Reorder to put best starting part first
+                        if best_start_part is not None and best_flush_score > 0:
+                            remaining_parts_sorted.remove(best_start_part)
+                            remaining_parts_sorted.insert(0, best_start_part)
+                            nesting_log(f"[NESTING] Step 2: Chose optimal starting part (flush_score={best_flush_score}) to maximize boundary sharing")
+                        else:
+                            # Fallback: sort by length descending
+                            remaining_parts_sorted.sort(key=lambda p: p["length"], reverse=True)
+                            nesting_log(f"[NESTING] Step 2: Using length-based sorting (no flush optimization needed)")
                     else:
-                        # Fallback: sort by length descending
+                        # For large lists, skip flush score calculation and just sort by length
                         remaining_parts_sorted.sort(key=lambda p: p["length"], reverse=True)
-                        nesting_log(f"[NESTING] Step 2: Using length-based sorting (no flush optimization needed)")
+                        nesting_log(f"[NESTING] Step 2: Large part count ({len(remaining_parts_sorted)}), using simple length-based sorting for performance")
                 else:
                     # Pattern already has parts, sort remaining by length descending
                     # This allows us to try larger parts first, then smaller ones with continue (not break)
