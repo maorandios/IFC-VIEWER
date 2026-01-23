@@ -135,21 +135,41 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
   const heightScale = pdfHeight / appHeight  // 0.667
   
   const stockLength = pattern.stock_length
-  const pxPerMm = appWidth / stockLength  // Use app's scale for calculations
+  const pxPerMm = appWidth / stockLength  // Base scale: full stock (including waste) to 1000px
   
-  // Sort parts by length (descending) - EXACTLY like app
-  const sortedParts = [...pattern.parts].sort((a, b) => {
-    const lengthA = a.length || 0
-    const lengthB = b.length || 0
+  // IMPORTANT: For reporting we want a visually optimized bar:
+  // - Sort parts by length (descending) so longer parts are placed first
+  // - This is the same strategy the PDF report originally used and is
+  //   what we consider the "correct" optimized display.
+  const sortedParts = [...(pattern.parts || [])].sort((a, b) => {
+    const lengthA = a?.length || 0
+    const lengthB = b?.length || 0
     return lengthB - lengthA
   })
   
-  // Calculate part positions using app's coordinate system
+  // Total length of all parts in mm (using the order from the backend)
+  const totalPartsLengthMm = sortedParts.reduce(
+    (sum, part) => sum + (part.length || 0),
+    0
+  )
+  
+  // Waste in mm (at the end of the bar)
+  const wasteMm = pattern.waste || 0
+  
+  // Available horizontal pixels for parts (1000px minus the waste fraction)
+  const availableForPartsPx =
+    appWidth * (stockLength > 0 ? 1 - wasteMm / stockLength : 1)
+  
+  // Use the same partsPxPerMm scaling as the app so boundaries line up exactly
+  const partsPxPerMm =
+    totalPartsLengthMm > 0 ? availableForPartsPx / totalPartsLengthMm : pxPerMm
+  
+  // Calculate part positions using the app's coordinate system and scaling
   let cumulativeX = 0
   const partPositions = sortedParts.map((part) => {
     const lengthMm = part.length || 0
     const xStart = cumulativeX
-    const xEnd = cumulativeX + (lengthMm * pxPerMm)
+    const xEnd = cumulativeX + lengthMm * partsPxPerMm
     cumulativeX = xEnd
     return { part, xStart, xEnd, lengthMm }
   })
@@ -621,10 +641,13 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
             // Calculate polygon points (same logic as app)
             const diagonalOffset = 12
             const SIGNIFICANT_MITER_DEG = 8.0
-            // CRITICAL FIX: Allow first part to have sloped start if it's not shared
-            // For first part (partIdx === 0), startIsShared is always false, so we can check for sloped start
-            const hasSlopedStart = startType === 'miter' && !startIsShared && startDev >= SIGNIFICANT_MITER_DEG
-            const hasSlopedEnd = endType === 'miter' && !endIsShared && endDev >= SIGNIFICANT_MITER_DEG && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
+            // CRITICAL FIX: Show sloped edges when this side has a miter, even if boundary is shared
+            // For shared boundaries with mixed types (one miter, one straight), the miter side should show its slope
+            // This matches the on-screen app behavior where polygon shapes show the actual part geometry
+            // For first part (partIdx === 0), only show start slope if part has both significant miters
+            const bothSignificantMiters = startType === 'miter' && endType === 'miter' && startDev >= 1.0 && endDev >= 1.0
+            const hasSlopedStart = startType === 'miter' && startDev > 0 && (partIdx > 0 || bothSignificantMiters)
+            const hasSlopedEnd = endType === 'miter' && endDev > 0 && (partIdx < numParts - 1 || (partIdx === lastPartIdx && pattern.waste > 0))
             
             // Calculate polygon vertices in app coordinates, then scale to PDF
             let polyLeftX = xPx
@@ -1034,18 +1057,18 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                 </Svg>
               )
             } else {
-              // Mixed types: one straight, one miter (same logic as app)
-              const SIGNIFICANT_MITER_DEG = 8.0
+              // Mixed types: one straight, one miter (align behaviour with on-screen app)
+              // The on-screen SVG treats ANY non-zero deviation on a miter end as a real slope,
+              // so here we only check for > 0, not a large SIGNIFICANT_MITER_DEG threshold.
               const diagonalOffset = 12
               
-              const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev >= SIGNIFICANT_MITER_DEG
-              const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev >= SIGNIFICANT_MITER_DEG
+              const leftIsMiter = sb.leftEndType === 'miter' && sb.leftDev > 0
+              const rightIsMiter = sb.rightStartType === 'miter' && sb.rightDev > 0
               
-              // Show sloped if either side has a significant miter
-              // BUT: if left is straight and right is miter, show straight (unless it's the last boundary)
+              // Show sloped if either side has a miter (match on-screen app behavior)
+              // The on-screen app shows diagonal for ANY miter, regardless of which side or position
               if (leftIsMiter) {
                 // Left end is miter - show sloped marker
-                // ownerSide is always 'left' in this branch
                 
                 // Calculate diagonal endpoints
                 let x1App, y1App, x2App, y2App
@@ -1092,13 +1115,11 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                     />
                   </Svg>
                 )
-              } else if (rightIsMiter && sb.rightPartIdx === lastPartIdx) {
-                // Right start is miter and it's the last internal boundary - show sloped
-                const ownerSide: 'left' | 'right' = 'right'
+              } else if (rightIsMiter) {
+                // Right start is miter - show sloped (regardless of position, matching on-screen app)
                 
                 // Calculate diagonal endpoints
                 let x1App, y1App, x2App, y2App
-                // ownerSide is always 'right' in this branch
                 x1App = xSnapped + 0.5
                 y1App = 0.5
                 x2App = xSnapped + diagonalOffset + 0.5
@@ -1143,7 +1164,7 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   </Svg>
                 )
               } else {
-                // Show as straight
+                // Both sides are straight - show as straight
                 const clampedX = Math.max(0, Math.min(boundaryXScaled, maxRight))
                 
                 return (
