@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   stockBar: {
     height: 40,
     width: '100%',  // Use full width to match table
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#333',
     borderStyle: 'solid',
@@ -126,11 +126,11 @@ const styles = StyleSheet.create({
 const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: string }> = ({ pattern, profileName }) => {
   // Match app's coordinate system exactly
   // App uses: viewBox="0 0 1000 60" (width=1000, height=60)
-  // PDF uses full page width (A4 - padding = 595 - 60 = 535) x 40 height
+  // PDF uses full page width (A4 landscape - padding = 842 - 60 = 782) x 50 height
   const appWidth = 1000
   const appHeight = 60
-  const pdfWidth = 535  // A4 page width (595pt) - page padding (30pt × 2)
-  const pdfHeight = 40
+  const pdfWidth = 782  // A4 landscape width (842pt) - page padding (30pt × 2)
+  const pdfHeight = 50  // Increased height for better visibility
   const widthScale = pdfWidth / appWidth  // ~0.535
   const heightScale = pdfHeight / appHeight  // 0.667
   
@@ -628,11 +628,18 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
               endIsShared = false
             }
             
-            // Match app's calculation exactly
-            const xPx = partIdx === 0 ? 0 : Math.floor(pos.xStart)
-            let endPx = partIdx === lastPartIdx && pattern.waste > 0 
-              ? exactPartsEndPx 
-              : Math.floor(pos.xEnd)
+            // Match app's calculation exactly - parts should be flush at shared boundaries
+            // Use the next part's xStart as this part's xEnd to ensure no gaps
+            const xPx = partIdx === 0 ? 0 : pos.xStart
+            let endPx: number
+            if (partIdx === lastPartIdx && pattern.waste > 0) {
+              endPx = exactPartsEndPx
+            } else if (partIdx < numParts - 1) {
+              // Use next part's start position to ensure flush connection
+              endPx = partPositions[partIdx + 1].xStart
+            } else {
+              endPx = pos.xEnd
+            }
             
             // Scale to PDF coordinates
             const xPxScaled = xPx * widthScale
@@ -733,23 +740,8 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   overflow: 'hidden',
                 }}
               >
-                {/* Part outline polygon - matches app's polygon shape (no fill, stroke only) */}
-                <Svg
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    width: contentWidth,
-                    height: contentHeight,
-                  }}
-                >
-                  <Polygon
-                    points={pointsString}
-                    fill="none"
-                    stroke="#9ca3af"
-                    strokeWidth="1"
-                  />
-                </Svg>
+                {/* Part shape - NO BORDERS, just defines the area */}
+                {/* Borders will be drawn separately as lines (only left and right sides) */}
                 
                 {/* Part label - positioned at center */}
                 {(() => {
@@ -785,7 +777,7 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
             )
           })}
           
-          {/* Render non-shared boundaries for each part (same as app) */}
+          {/* Render side boundaries for each part - only left and right, not top/bottom */}
           {partPositions.map((pos, partIdx) => {
             const partEnd = partEnds[partIdx]
             if (!partEnd) return null
@@ -973,7 +965,7 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
             )
           })}
           
-          {/* Render shared boundaries using the calculated sharedBoundaries array (same as app) */}
+          {/* Render shared boundaries - only draw ONE line per shared boundary */}
           {sharedBoundaries.map((sb, idx) => {
             const xSnapped = sb.x
             const boundaryXScaled = xSnapped * widthScale
@@ -1289,7 +1281,7 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
   return (
     <Document>
       {/* Cover Page */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.title}>Nesting Report</Text>
         <Text style={{ marginBottom: 10 }}>File: {filename}</Text>
         
@@ -1401,7 +1393,7 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
       </Page>
 
       {/* Section 1: BOM Summary */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
         <Text style={styles.sectionTitle}>Section 1: BOM Summary</Text>
         
         <View style={styles.table}>
@@ -1580,7 +1572,7 @@ export const NestingReportPDF: React.FC<NestingReportPDFProps> = ({
 
       {/* Section 2: Cutting Patterns - Each profile on separate pages */}
       {nestingReport.profiles.map((profile, profileIdx) => (
-        <Page key={profileIdx} size="A4" style={styles.page}>
+        <Page key={profileIdx} size="A4" orientation="landscape" style={styles.page}>
           <Text style={styles.sectionTitle}>Section 2: Cutting Patterns</Text>
           <Text style={{ marginBottom: 10, fontSize: 11 }}>
             {profile.profile_name} ({profile.total_parts} parts)
