@@ -733,7 +733,7 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                   overflow: 'hidden',
                 }}
               >
-                {/* Gray background polygon - matches app's polygon shape */}
+                {/* Part outline polygon - matches app's polygon shape (no fill, stroke only) */}
                 <Svg
                   style={{
                     position: 'absolute',
@@ -745,8 +745,9 @@ const StockBarVisualization: React.FC<{ pattern: CuttingPattern; profileName: st
                 >
                   <Polygon
                     points={pointsString}
-                    fill="#f3f4f6"
-                    stroke="none"
+                    fill="none"
+                    stroke="#9ca3af"
+                    strokeWidth="1"
                   />
                 </Svg>
                 
