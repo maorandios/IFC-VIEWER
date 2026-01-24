@@ -585,6 +585,45 @@ def get_plate_thickness(element) -> str:
     return "N/A"
 
 
+def is_fastener_like(product) -> bool:
+    """Return True if this IFC product is a fastener element.
+    
+    Handles both standard IFC fastener entities and Tekla Structures-specific patterns.
+    Tekla may export fasteners as IfcBeam, IfcColumn, or other types with specific names/tags.
+    """
+    element_type = product.is_a()
+    
+    # Standard IFC fastener entities
+    if element_type in FASTENER_TYPES:
+        return True
+    
+    # Tekla Structures often exports fasteners as other types with specific names/tags
+    try:
+        name = (getattr(product, 'Name', None) or '').lower()
+        desc = (getattr(product, 'Description', None) or '').lower()
+        tag = (getattr(product, 'Tag', None) or '').lower()
+        
+        # Check for fastener keywords in name/description/tag
+        fastener_keywords = ['bolt', 'nut', 'washer', 'fastener', 'screw', 'anchor', 'mechanical']
+        text_content = name + ' ' + desc + ' ' + tag
+        if any(kw in text_content for kw in fastener_keywords):
+            return True
+        
+        # Check Tekla-specific property sets
+        try:
+            psets = ifcopenshell.util.element.get_psets(product)
+            for pset_name in psets.keys():
+                pset_lower = pset_name.lower()
+                if 'bolt' in pset_lower or 'fastener' in pset_lower or 'mechanical' in pset_lower:
+                    return True
+        except:
+            pass
+    except Exception:
+        pass
+    
+    return False
+
+
 def analyze_ifc(file_path: Path) -> Dict[str, Any]:
     """Analyze IFC file and extract steel information."""
     print(f"[ANALYZE] ===== STARTING ANALYSIS FOR {file_path.name} =====")
@@ -602,10 +641,38 @@ def analyze_ifc(file_path: Path) -> Dict[str, Any]:
     plates: Dict[str, Dict[str, Any]] = {}
     
     total_weight = 0.0
+    fastener_count = 0
     
     # Iterate through all elements
     for element in ifc_file.by_type("IfcProduct"):
         element_type = element.is_a()
+        
+        # Count fasteners - only physical bolts (with nuts/washers), not just holes
+        if element_type in FASTENER_TYPES or is_fastener_like(element):
+            # Get the actual bolt count from Tekla properties
+            # Only count bolts that have nuts or washers (physical bolts, not just holes)
+            bolt_count_to_add = 0
+            
+            try:
+                psets = ifcopenshell.util.element.get_psets(element)
+                if 'Tekla Bolt' in psets:
+                    tekla_bolt_props = psets['Tekla Bolt']
+                    nut_count = tekla_bolt_props.get('Nut count', 0)
+                    washer_count = tekla_bolt_props.get('Washer count', 0)
+                    bolt_count = tekla_bolt_props.get('Bolt count', 1)
+                    
+                    # Only count if this assembly has nuts or washers (physical bolts)
+                    if nut_count > 0 or washer_count > 0:
+                        bolt_count_to_add = int(bolt_count) if isinstance(bolt_count, (int, float)) else 1
+                    # else: skip - this is just a hole, not a physical bolt
+                else:
+                    # No Tekla properties, count as 1 (fallback for non-Tekla files)
+                    bolt_count_to_add = 1
+            except:
+                # If any error, count as 1 (fallback)
+                bolt_count_to_add = 1
+            
+            fastener_count += bolt_count_to_add
         
         if element_type in STEEL_TYPES:
             weight = get_element_weight(element)
@@ -716,7 +783,8 @@ def analyze_ifc(file_path: Path) -> Dict[str, Any]:
         "total_tonnage": round(total_weight / 1000.0, 2),  # Convert kg to tonnes
         "assemblies": assembly_list,
         "profiles": profile_list,
-        "plates": plate_list
+        "plates": plate_list,
+        "fastener_count": fastener_count
     }
 
 

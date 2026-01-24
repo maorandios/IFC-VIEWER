@@ -1,6 +1,7 @@
 export interface SteelReport {
   total_tonnage: number
   fastener_tonnage?: number
+  fastener_count?: number  // Total count of fasteners/bolts
   category_tonnage?: Record<string, number>  // Tonnage by category (Beam, Column, Plate, Other)
   category_items?: Record<string, Array<{ name: string; tonnage: number; weight_kg?: number }>>  // Items grouped by name within each category
   assemblies: Assembly[]

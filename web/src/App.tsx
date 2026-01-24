@@ -3,6 +3,7 @@ import FileUpload from './components/FileUpload'
 import IFCViewer from './components/IFCViewer'
 import SteelReports from './components/SteelReports'
 import NestingReport from './components/NestingReport'
+import Dashboard from './components/Dashboard'
 import { SteelReport, FilterState, NestingReport as NestingReportType } from './types'
 
 function App() {
@@ -46,7 +47,7 @@ function App() {
     plateThicknesses: new Set<string>(),
     assemblyMarks: new Set<string>()
   })
-  const [activeTab, setActiveTab] = useState<'model' | 'nesting'>(savedState?.activeTab || 'model')
+  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard'>(savedState?.activeTab || 'model')
   const [nestingReport, setNestingReport] = useState<NestingReportType | null>(null)  // Always start with null
 
   // Save to localStorage whenever state changes (but only save filters and activeTab, not file data)
@@ -82,7 +83,7 @@ function App() {
       plateThicknesses: new Set(),
       assemblyMarks: new Set()
     })
-    setActiveTab('model')  // Reset to model tab
+    setActiveTab('dashboard')  // Reset to dashboard tab
   }
 
   const handleNestingReportChange = (report: NestingReportType | null) => {
@@ -110,6 +111,16 @@ function App() {
             <div className="border-b">
               <div className="flex">
                 <button
+                  onClick={() => setActiveTab('dashboard')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'dashboard'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Dashboard
+                </button>
+                <button
                   onClick={() => setActiveTab('model')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'model'
@@ -133,6 +144,15 @@ function App() {
             </div>
 
             {/* Tab Content */}
+            {activeTab === 'dashboard' && (
+              <div className="flex-1 overflow-y-auto">
+                <Dashboard 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
             {activeTab === 'model' && (
               <div className="flex-1 flex overflow-hidden">
                 <div className="flex-1 border-r relative">
