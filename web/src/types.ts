@@ -42,6 +42,8 @@ export interface NestingPart {
   assembly_mark?: string
   element_name?: string
   reference?: string
+  start_angle?: number  // Angle of start cut
+  end_angle?: number  // Angle of end cut
 }
 
 export interface CuttingPattern {
@@ -50,6 +52,14 @@ export interface CuttingPattern {
     part: NestingPart
     cut_position: number  // Start position on stock bar in mm
     length: number  // in mm
+    slope_info?: {
+      start_angle?: number
+      end_angle?: number
+      start_has_slope?: boolean
+      end_has_slope?: boolean
+      has_slope?: boolean
+      complementary_pair?: boolean
+    }
   }>
   waste: number  // Waste length in mm
   waste_percentage: number
@@ -89,6 +99,39 @@ export interface NestingReport {
   settings: {
     stock_lengths: number[]  // in mm
   }
+}
+
+// Stock bar rendering data - pre-calculated by the main app for PDF generation
+export interface StockBarRenderData {
+  // SVG polygon points for each part
+  parts: Array<{
+    partNumber: number
+    partName: string
+    polygonPoints: string  // SVG polygon points attribute
+    fillColor: string
+    strokeColor: string
+    labelX: number  // Label center X position (0-1000 px)
+    labelY: number  // Label center Y position (0-60 px)
+    showLabel: boolean
+  }>
+  // Waste area (if any)
+  waste: {
+    x: number  // Start X position (0-1000 px)
+    width: number  // Width in px
+    color: string
+  } | null
+  // Cut line markers
+  cutLines: Array<{
+    x: number  // X position (0-1000 px)
+    y1: number  // Start Y (0-60 px)
+    y2: number  // End Y (0-60 px)
+    type: 'straight' | 'miter'  // Line type for styling
+    isShared: boolean  // Whether this is a shared boundary
+  }>
+  // Stock bar dimensions
+  stockLengthMm: number
+  totalWidthPx: number  // Should be 1000
+  heightPx: number  // Should be 60
 }
 
 

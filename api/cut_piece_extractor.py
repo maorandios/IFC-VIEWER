@@ -80,7 +80,7 @@ class CutPieceExtractor:
         self.tolerances = {
             "axis_colinear": 0.9995,
             "angle_deg": 1.0,
-            "plane_residual_mm": 2.0 * (1000.0 if self.unit_scale == 1.0 else 1.0),  # 2mm equivalent
+            "plane_residual_mm": 2.0,  # Fixed 2mm tolerance for slope detection
             "end_slice_percent": 0.01  # 1% of length
         }
         if ifc_file is not None:
