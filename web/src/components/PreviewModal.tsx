@@ -25,6 +25,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   const controlsRef = useRef<OrbitControls | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const boundingBoxRef = useRef<THREE.Box3 | null>(null);
+  const centerRef = useRef<THREE.Vector3 | null>(null);
 
   useEffect(() => {
     if (!isOpen || !containerRef.current) return;
@@ -44,29 +46,58 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
     camera.position.set(50, 50, 50);
     cameraRef.current = camera;
 
-    // Setup renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Setup renderer with same settings as main model viewer
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      preserveDrawingBuffer: true
+    });
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0xf0f0f0);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Setup controls
+    // Setup controls - no damping for instant response
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
+    controls.enableDamping = false; // Disable damping for instant mouse response
     controlsRef.current = controls;
 
-    // Add lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    // Add lights - match main model viewer exactly
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
-
-    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight1.position.set(100, 100, 100);
+    
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x666666, 0.5);
+    scene.add(hemiLight);
+    
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.6);
+    directionalLight1.position.set(12, 14, 10);
+    directionalLight1.castShadow = true;
+    directionalLight1.shadow.mapSize.set(2048, 2048);
+    directionalLight1.shadow.bias = -0.0005;
+    directionalLight1.shadow.camera.near = 0.1;
+    directionalLight1.shadow.camera.far = 1000;
+    directionalLight1.shadow.camera.left = -100;
+    directionalLight1.shadow.camera.right = 100;
+    directionalLight1.shadow.camera.top = 100;
+    directionalLight1.shadow.camera.bottom = -100;
     scene.add(directionalLight1);
-
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight2.position.set(-100, -100, -100);
+    
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.9);
+    directionalLight2.position.set(-10, -12, -8);
+    directionalLight2.castShadow = true;
+    directionalLight2.shadow.mapSize.set(1024, 1024);
+    directionalLight2.shadow.bias = -0.0005;
+    directionalLight2.shadow.camera.near = 0.1;
+    directionalLight2.shadow.camera.far = 1000;
+    directionalLight2.shadow.camera.left = -100;
+    directionalLight2.shadow.camera.right = 100;
+    directionalLight2.shadow.camera.top = 100;
+    directionalLight2.shadow.camera.bottom = -100;
     scene.add(directionalLight2);
 
     // Load model
@@ -230,6 +261,10 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
               child.visible = true;
               visibleMeshes.push(child);
               
+              // Enable shadows for realistic rendering
+              child.castShadow = true;
+              child.receiveShadow = true;
+              
               if (isFastenerNearby && !isSelected) {
                 fastenerCount++;
                 // Make fasteners semi-transparent to show holes
@@ -245,17 +280,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                   }
                   child.material = fastenerMaterial;
                 }
-              } else {
-                // Highlight main selected elements
-                if (child.material) {
-                  const originalMaterial = child.material as THREE.Material;
-                  const highlightMaterial = originalMaterial.clone();
-                  if ('emissive' in highlightMaterial) {
-                    (highlightMaterial as any).emissive = new THREE.Color(0x444444);
-                  }
-                  child.material = highlightMaterial;
-                }
               }
+              // Don't modify material for selected elements - keep original glTF materials
             } else {
               // Hide all other elements
               child.visible = false;
@@ -264,6 +290,31 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         });
 
         console.log(`[Preview] Checked ${checkedMeshes} meshes, showing ${visibleMeshes.length} instances (${fastenerCount} fasteners) from ${elementIds.length} element IDs`);
+
+        // Add edge lines to visible meshes for better clarity
+        visibleMeshes.forEach((mesh) => {
+          if (mesh instanceof THREE.Mesh && mesh.geometry) {
+            try {
+              // Create edges geometry
+              const edges = new THREE.EdgesGeometry(mesh.geometry, 15); // 15 degree threshold
+              const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x000000, // Black edges
+                linewidth: 1,
+                transparent: false
+              });
+              const edgeLine = new THREE.LineSegments(edges, lineMaterial);
+              
+              // Store reference to edge line for cleanup
+              if (!mesh.userData) mesh.userData = {};
+              mesh.userData.edgeLine = edgeLine;
+              
+              // Add edge line to the mesh
+              mesh.add(edgeLine);
+            } catch (error) {
+              console.warn('[Preview] Failed to create edge lines for mesh:', error);
+            }
+          }
+        });
 
         // Calculate bounding box of visible elements and focus camera
         if (visibleMeshes.length > 0) {
@@ -276,6 +327,10 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
+          
+          // Store for view controls
+          boundingBoxRef.current = box;
+          centerRef.current = center;
           
           // Calculate optimal camera distance to fit the object
           const fov = camera.fov * (Math.PI / 180);
@@ -316,7 +371,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
     // Animation loop
     const animate = () => {
       requestAnimationFrame(animate);
-      controls.update();
+      // No need to call controls.update() when damping is disabled
       renderer.render(scene, camera);
     };
     animate();
@@ -333,6 +388,22 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+      
+      // Clean up edge lines
+      if (scene) {
+        scene.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.userData?.edgeLine) {
+            child.remove(child.userData.edgeLine);
+            if (child.userData.edgeLine.geometry) {
+              child.userData.edgeLine.geometry.dispose();
+            }
+            if (child.userData.edgeLine.material) {
+              (child.userData.edgeLine.material as THREE.Material).dispose();
+            }
+          }
+        });
+      }
+      
       if (containerRef.current && renderer.domElement) {
         containerRef.current.removeChild(renderer.domElement);
       }
@@ -340,6 +411,47 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
       controls.dispose();
     };
   }, [isOpen, filename, elementIds]);
+
+  // Function to set camera view from different angles
+  const setCameraView = (view: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back') => {
+    if (!cameraRef.current || !controlsRef.current || !centerRef.current || !boundingBoxRef.current) return;
+
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const center = centerRef.current;
+    const size = boundingBoxRef.current.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // Calculate distance based on FOV
+    const fov = camera.fov * (Math.PI / 180);
+    let distance = Math.abs(maxDim / Math.tan(fov / 2)) * 1.2;
+
+    // Set camera position based on view
+    switch (view) {
+      case 'top':
+        camera.position.set(center.x, center.y + distance, center.z);
+        break;
+      case 'bottom':
+        camera.position.set(center.x, center.y - distance, center.z);
+        break;
+      case 'left':
+        camera.position.set(center.x - distance, center.y, center.z);
+        break;
+      case 'right':
+        camera.position.set(center.x + distance, center.y, center.z);
+        break;
+      case 'front':
+        camera.position.set(center.x, center.y, center.z + distance);
+        break;
+      case 'back':
+        camera.position.set(center.x, center.y, center.z - distance);
+        break;
+    }
+
+    camera.lookAt(center);
+    controls.target.copy(center);
+    controls.update();
+  };
 
   if (!isOpen) return null;
 
@@ -418,6 +530,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
                 textAlign: 'center',
+                zIndex: 10,
               }}
             >
               <div
@@ -443,9 +556,140 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                 transform: 'translate(-50%, -50%)',
                 textAlign: 'center',
                 color: '#e74c3c',
+                zIndex: 10,
               }}
             >
               <p>{error}</p>
+            </div>
+          )}
+          
+          {/* View Control Panel */}
+          {!loading && !error && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                borderRadius: '8px',
+                padding: '12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                zIndex: 10,
+              }}
+            >
+              <div style={{ marginBottom: '8px', fontWeight: 600, fontSize: '12px', color: '#666' }}>
+                VIEW CONTROLS
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                <button
+                  onClick={() => setCameraView('top')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Top
+                </button>
+                <button
+                  onClick={() => setCameraView('front')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Front
+                </button>
+                <button
+                  onClick={() => setCameraView('right')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Right
+                </button>
+                <button
+                  onClick={() => setCameraView('bottom')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Bottom
+                </button>
+                <button
+                  onClick={() => setCameraView('back')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setCameraView('left')}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                >
+                  Left
+                </button>
+              </div>
             </div>
           )}
         </div>
