@@ -137,9 +137,28 @@ def sanitize_filename(filename: str) -> str:
 
 
 def get_element_weight(element) -> float:
-    """Get weight of an IFC element in kg."""
+    """Get weight of an IFC element in kg.
+    
+    Priority order:
+    1. GrossWeight (if available) - weight before cuts/holes
+    2. Weight - standard weight property
+    3. Mass - alternative weight property
+    """
     try:
         psets = ifcopenshell.util.element.get_psets(element)
+        
+        # First, try to find GrossWeight property
+        for pset_name, props in psets.items():
+            if "GrossWeight" in props:
+                weight = props["GrossWeight"]
+                if isinstance(weight, (int, float)):
+                    return float(weight)
+            if "Gross Weight" in props:
+                weight = props["Gross Weight"]
+                if isinstance(weight, (int, float)):
+                    return float(weight)
+        
+        # If no GrossWeight, fall back to standard Weight
         for pset_name, props in psets.items():
             if "Weight" in props:
                 weight = props["Weight"]
@@ -158,7 +177,7 @@ def get_element_weight(element) -> float:
         for material in materials:
             if hasattr(material, "HasProperties"):
                 for prop in material.HasProperties or []:
-                    if hasattr(prop, "Name") and prop.Name in ["Weight", "Mass"]:
+                    if hasattr(prop, "Name") and prop.Name in ["GrossWeight", "Weight", "Mass"]:
                         if hasattr(prop, "NominalValue") and prop.NominalValue:
                             return float(prop.NominalValue.wrappedValue)
     except:
@@ -647,32 +666,9 @@ def analyze_ifc(file_path: Path) -> Dict[str, Any]:
     for element in ifc_file.by_type("IfcProduct"):
         element_type = element.is_a()
         
-        # Count fasteners - only physical bolts (with nuts/washers), not just holes
+        # Count fasteners
         if element_type in FASTENER_TYPES or is_fastener_like(element):
-            # Get the actual bolt count from Tekla properties
-            # Only count bolts that have nuts or washers (physical bolts, not just holes)
-            bolt_count_to_add = 0
-            
-            try:
-                psets = ifcopenshell.util.element.get_psets(element)
-                if 'Tekla Bolt' in psets:
-                    tekla_bolt_props = psets['Tekla Bolt']
-                    nut_count = tekla_bolt_props.get('Nut count', 0)
-                    washer_count = tekla_bolt_props.get('Washer count', 0)
-                    bolt_count = tekla_bolt_props.get('Bolt count', 1)
-                    
-                    # Only count if this assembly has nuts or washers (physical bolts)
-                    if nut_count > 0 or washer_count > 0:
-                        bolt_count_to_add = int(bolt_count) if isinstance(bolt_count, (int, float)) else 1
-                    # else: skip - this is just a hole, not a physical bolt
-                else:
-                    # No Tekla properties, count as 1 (fallback for non-Tekla files)
-                    bolt_count_to_add = 1
-            except:
-                # If any error, count as 1 (fallback)
-                bolt_count_to_add = 1
-            
-            fastener_count += bolt_count_to_add
+            fastener_count += 1
         
         if element_type in STEEL_TYPES:
             weight = get_element_weight(element)
@@ -810,10 +806,18 @@ async def upload_ifc(file: UploadFile = File(...)):
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="File is empty")
         
-        with open(file_path, "wb") as f:
-            f.write(content)
-        
-        print(f"[UPLOAD] File saved: {file_path}, size: {len(content)} bytes")
+        print(f"[UPLOAD] About to write file: {file_path}")
+        print(f"[UPLOAD] File path type: {type(file_path)}, exists: {file_path.parent.exists()}")
+        try:
+            with open(file_path, "wb") as f:
+                f.write(content)
+            print(f"[UPLOAD] File saved successfully: {file_path}, size: {len(content)} bytes")
+        except Exception as write_error:
+            print(f"[UPLOAD] ERROR writing file: {write_error}")
+            print(f"[UPLOAD] Error type: {type(write_error)}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Analyze IFC
         print(f"[UPLOAD] About to call analyze_ifc for: {file_path}")
@@ -823,8 +827,17 @@ async def upload_ifc(file: UploadFile = File(...)):
             
             # Save report
             report_path = REPORTS_DIR / f"{safe_filename}.json"
-            with open(report_path, "w", encoding='utf-8') as f:
-                json.dump(report, f, indent=2)
+            print(f"[UPLOAD] About to save report: {report_path}")
+            try:
+                with open(report_path, "w", encoding='utf-8') as f:
+                    json.dump(report, f, indent=2)
+                print(f"[UPLOAD] Report saved successfully: {report_path}")
+            except Exception as report_error:
+                print(f"[UPLOAD] ERROR saving report: {report_error}")
+                print(f"[UPLOAD] Error type: {type(report_error)}")
+                import traceback
+                traceback.print_exc()
+                raise
             
             # Convert to glTF synchronously (for now, to catch errors)
             gltf_filename = f"{Path(safe_filename).stem}.glb"
@@ -990,7 +1003,10 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
         settings = ifcopenshell.geom.settings()
         settings.set(settings.USE_WORLD_COORDS, True)  # Use world coordinates for consistency
         settings.set(settings.WELD_VERTICES, True)
+        # DISABLE_OPENING_SUBTRACTIONS = False means openings/holes ARE applied (not disabled)
         settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, False)
+        # Apply default materials
+        settings.set(settings.APPLY_DEFAULT_MATERIALS, True)
         
         print(f"[GLTF] Using WORLD coordinates, preserving original IFC axis orientation")
         
@@ -1688,8 +1704,37 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
         # Ensure the directory exists
         gltf_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create a scene with all meshes (preserves individual colors)
-        scene = trimesh.Scene(cleaned_meshes)
+        # Create a scene with named meshes to preserve metadata
+        # Use a dictionary where keys are mesh names (which will be preserved in glTF)
+        geometry_dict = {}
+        for i, mesh in enumerate(cleaned_meshes):
+            # Get the mesh name from metadata, or create a default one
+            if hasattr(mesh, 'metadata') and 'mesh_name' in mesh.metadata:
+                mesh_name = mesh.metadata['mesh_name']
+            elif hasattr(mesh, 'metadata') and 'product_id' in mesh.metadata:
+                # Fallback: create name from product_id
+                product_id = mesh.metadata['product_id']
+                element_type = mesh.metadata.get('element_type', 'Unknown')
+                assembly_mark = mesh.metadata.get('assembly_mark', 'NoAssembly')
+                safe_assembly_mark = str(assembly_mark).replace('/', '_').replace('\\', '_').replace(' ', '_').replace(':', '_')
+                mesh_name = f"{element_type}_{product_id}_{safe_assembly_mark}"
+            else:
+                # Last resort: use index
+                mesh_name = f"mesh_{i}"
+            
+            # Ensure unique names by appending index if needed
+            original_name = mesh_name
+            counter = 0
+            while mesh_name in geometry_dict:
+                counter += 1
+                mesh_name = f"{original_name}_{counter}"
+            
+            geometry_dict[mesh_name] = mesh
+        
+        print(f"[GLTF] Creating scene with {len(geometry_dict)} named meshes")
+        
+        # Create a scene with the named geometry dictionary
+        scene = trimesh.Scene(geometry_dict)
         
         # Export - trimesh will use .glb extension for binary format
         scene.export(str(gltf_path))
@@ -5036,6 +5081,355 @@ async def get_element_full(element_id: int, filename: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get element data: {str(e)}")
+
+
+@app.get("/api/dashboard-details/{filename}")
+async def get_dashboard_details(filename: str):
+    """Get detailed part information for dashboard tables.
+    
+    Returns:
+    - profiles: List of grouped profile parts with quantity
+    - plates: List of grouped plate parts with quantity
+    - assemblies: List of assemblies with their parts
+    """
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    file_path = IFC_DIR / decoded_filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="IFC file not found")
+    
+    try:
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
+        
+        # Use dictionaries to group identical parts
+        profiles_dict = {}  # key: (part_name, assembly_mark, profile_name, length)
+        plates_dict = {}    # key: (part_name, assembly_mark, thickness, width, length)
+        assemblies_dict = {}
+        
+        # Iterate through all steel elements
+        for element in ifc_file.by_type("IfcProduct"):
+            element_type = element.is_a()
+            
+            if element_type not in STEEL_TYPES:
+                continue
+            
+            # Get basic info
+            element_id = element.id()
+            element_name = getattr(element, 'Name', None) or ''
+            element_tag = getattr(element, 'Tag', None) or ''
+            
+            # Also check for Reference in property sets (common in Tekla)
+            reference = None
+            try:
+                psets_temp = ifcopenshell.util.element.get_psets(element)
+                for pset_name, props in psets_temp.items():
+                    if 'Reference' in props and props['Reference']:
+                        reference = str(props['Reference']).strip()
+                        if reference and reference.upper() not in ['NONE', 'NULL', 'N/A', '']:
+                            break
+            except:
+                pass
+            
+            # Check if tag is a GUID
+            tag_is_guid = element_tag and element_tag.startswith('ID') and len(element_tag) > 30
+            
+            # Priority: Tag (if not GUID) > Reference > Name > Tag (if GUID) > ID
+            if not tag_is_guid and element_tag:
+                part_name = element_tag
+            elif reference:
+                part_name = reference
+            elif element_name:
+                part_name = element_name
+            elif element_tag:
+                part_name = element_tag
+            else:
+                part_name = f"Part_{element_id}"
+            
+            # Get weight
+            weight = get_element_weight(element)
+            
+            # Get assembly info
+            assembly_mark, assembly_id = get_assembly_info(element)
+            
+            # Get dimensions from property sets
+            psets = ifcopenshell.util.element.get_psets(element)
+            length = None
+            width = None
+            height = None
+            
+            for pset_name, props in psets.items():
+                if 'Length' in props and props['Length']:
+                    length = float(props['Length'])
+                if 'Width' in props and props['Width']:
+                    width = float(props['Width'])
+                if 'Height' in props and props['Height']:
+                    height = float(props['Height'])
+            
+            # Process profiles (beams, columns, members)
+            if element_type in ["IfcBeam", "IfcColumn", "IfcMember"]:
+                profile_name = get_profile_name(element)
+                
+                # Round length to avoid floating point differences
+                length_rounded = round(length, 1) if length else None
+                
+                # Check if part_name and assembly_mark are GUIDs
+                part_is_guid = part_name.startswith('ID') and len(part_name) > 30
+                assembly_is_guid = assembly_mark.startswith('ID') and len(assembly_mark) > 30
+                
+                # Group by: part_name (if not GUID), profile_name, and length
+                # Do NOT include assembly in grouping - we want to group across assemblies
+                
+                group_key_parts = [profile_name, length_rounded]
+                
+                if not part_is_guid:
+                    group_key_parts.insert(0, part_name)
+                
+                group_key = tuple(group_key_parts)
+                display_assembly = "Various"  # Will be updated with actual assemblies later
+                
+                if group_key not in profiles_dict:
+                    profiles_dict[group_key] = {
+                        "part_name": part_name if not part_is_guid else None,  # Store actual part name or None
+                        "assembly_mark": display_assembly,
+                        "profile_name": profile_name,
+                        "element_type": element_type,
+                        "length": length_rounded,
+                        "weight": weight,
+                        "quantity": 0,
+                        "total_weight": 0.0,
+                        "width": width,
+                        "height": height,
+                        "ids": [],
+                        "assemblies": set(),  # Track unique assemblies
+                        "part_names": set()  # Track all part names in this group
+                    }
+                
+                # Track assemblies and part names for this group
+                profiles_dict[group_key]["assemblies"].add(assembly_mark)
+                if not part_is_guid:
+                    profiles_dict[group_key]["part_names"].add(part_name)
+                
+                profiles_dict[group_key]["quantity"] += 1
+                profiles_dict[group_key]["total_weight"] += weight
+                profiles_dict[group_key]["ids"].append(element_id)
+                
+                # Add to assembly
+                if assembly_mark not in assemblies_dict:
+                    assemblies_dict[assembly_mark] = {
+                        "assembly_mark": assembly_mark,
+                        "assembly_id": assembly_id,
+                        "parts": [],
+                        "total_weight": 0.0,
+                        "member_count": 0,
+                        "plate_count": 0
+                    }
+                
+                assemblies_dict[assembly_mark]["parts"].append({
+                    "id": element_id,
+                    "part_name": part_name,
+                    "profile_name": profile_name,
+                    "length": length_rounded,
+                    "weight": round(weight, 2),
+                    "part_type": "profile"
+                })
+                assemblies_dict[assembly_mark]["total_weight"] += weight
+                assemblies_dict[assembly_mark]["member_count"] += 1
+            
+            # Process plates
+            elif element_type in ["IfcPlate", "IfcSlab"]:
+                thickness = get_plate_thickness(element)
+                
+                # Round dimensions to avoid floating point differences
+                width_rounded = round(width, 1) if width else None
+                length_rounded = round(length, 1) if length else None
+                
+                # Check if part_name and assembly_mark are GUIDs
+                part_is_guid = part_name.startswith('ID') and len(part_name) > 30
+                assembly_is_guid = assembly_mark.startswith('ID') and len(assembly_mark) > 30
+                
+                # Group by: part_name (if not GUID), thickness, and dimensions
+                # Do NOT include assembly in grouping - we want to group across assemblies
+                
+                group_key_parts = [thickness, width_rounded, length_rounded]
+                
+                if not part_is_guid:
+                    group_key_parts.insert(0, part_name)
+                
+                group_key = tuple(group_key_parts)
+                display_assembly = "Various"  # Will be updated with actual assemblies later
+                
+                if group_key not in plates_dict:
+                    plates_dict[group_key] = {
+                        "part_name": part_name if not part_is_guid else None,  # Store actual part name or None
+                        "assembly_mark": display_assembly,
+                        "thickness": thickness,
+                        "element_type": element_type,
+                        "width": width_rounded,
+                        "length": length_rounded,
+                        "height": height,
+                        "weight": weight,
+                        "quantity": 0,
+                        "total_weight": 0.0,
+                        "ids": [],
+                        "assemblies": set(),  # Track unique assemblies
+                        "part_names": set()  # Track all part names in this group
+                    }
+                
+                # Track assemblies and part names for this group
+                plates_dict[group_key]["assemblies"].add(assembly_mark)
+                if not part_is_guid:
+                    plates_dict[group_key]["part_names"].add(part_name)
+                
+                plates_dict[group_key]["quantity"] += 1
+                plates_dict[group_key]["total_weight"] += weight
+                plates_dict[group_key]["ids"].append(element_id)
+                
+                # Add to assembly
+                if assembly_mark not in assemblies_dict:
+                    assemblies_dict[assembly_mark] = {
+                        "assembly_mark": assembly_mark,
+                        "assembly_id": assembly_id,
+                        "parts": [],
+                        "total_weight": 0.0,
+                        "member_count": 0,
+                        "plate_count": 0
+                    }
+                
+                assemblies_dict[assembly_mark]["parts"].append({
+                    "id": element_id,
+                    "part_name": part_name,
+                    "thickness": thickness,
+                    "width": width_rounded,
+                    "length": length_rounded,
+                    "weight": round(weight, 2),
+                    "part_type": "plate"
+                })
+                assemblies_dict[assembly_mark]["total_weight"] += weight
+                assemblies_dict[assembly_mark]["plate_count"] += 1
+        
+        # Convert profiles dict to list
+        profiles_list = []
+        for profile_data in profiles_dict.values():
+            # Determine display name: use actual part names if available, otherwise use profile name
+            if profile_data["part_names"]:
+                # If there are real part names, show them (comma separated if multiple)
+                display_name = ", ".join(sorted(profile_data["part_names"]))
+            else:
+                # No real part names (all GUIDs) - use profile name
+                display_name = profile_data["profile_name"]
+            
+            # Get unique assemblies (excluding GUIDs)
+            assemblies = profile_data["assemblies"]
+            non_guid_assemblies = [a for a in assemblies if not (a.startswith('ID') and len(a) > 30)]
+            
+            if non_guid_assemblies:
+                # Show actual assembly names
+                display_assembly = ", ".join(sorted(non_guid_assemblies))
+            else:
+                # All assemblies are GUIDs
+                display_assembly = "Various"
+            
+            profiles_list.append({
+                "part_name": display_name,
+                "assembly_mark": display_assembly,
+                "profile_name": profile_data["profile_name"],
+                "length": profile_data["length"],
+                "weight": round(profile_data["weight"], 2),
+                "quantity": profile_data["quantity"],
+                "total_weight": round(profile_data["total_weight"], 2),
+                "ids": profile_data["ids"]
+            })
+        
+        # Convert plates dict to list
+        plates_list = []
+        for plate_data in plates_dict.values():
+            # Determine display name: use actual part names if available, otherwise use thickness
+            if plate_data["part_names"]:
+                # If there are real part names, show them (comma separated if multiple)
+                display_name = ", ".join(sorted(plate_data["part_names"]))
+            else:
+                # No real part names (all GUIDs) - use thickness
+                display_name = plate_data["thickness"]
+            
+            # Get unique assemblies (excluding GUIDs)
+            assemblies = plate_data["assemblies"]
+            non_guid_assemblies = [a for a in assemblies if not (a.startswith('ID') and len(a) > 30)]
+            
+            if non_guid_assemblies:
+                # Show actual assembly names
+                display_assembly = ", ".join(sorted(non_guid_assemblies))
+            else:
+                # All assemblies are GUIDs
+                display_assembly = "Various"
+            
+            plates_list.append({
+                "part_name": display_name,
+                "assembly_mark": display_assembly,
+                "thickness": plate_data["thickness"],
+                "width": plate_data["width"],
+                "length": plate_data["length"],
+                "weight": round(plate_data["weight"], 2),
+                "quantity": plate_data["quantity"],
+                "total_weight": round(plate_data["total_weight"], 2),
+                "ids": plate_data["ids"]
+            })
+        
+        # Convert assemblies dict to list and calculate main profile
+        assemblies_list = []
+        for assembly_mark, assembly_data in assemblies_dict.items():
+            # Find the most common profile in this assembly
+            profile_counts = {}
+            main_profile = "N/A"
+            max_length = 0
+            
+            for part in assembly_data["parts"]:
+                if part["part_type"] == "profile":
+                    profile = part["profile_name"]
+                    if profile not in profile_counts:
+                        profile_counts[profile] = {"count": 0, "max_length": 0}
+                    profile_counts[profile]["count"] += 1
+                    if part["length"] and part["length"] > profile_counts[profile]["max_length"]:
+                        profile_counts[profile]["max_length"] = part["length"]
+            
+            # Get the profile with the longest length (main structural member)
+            if profile_counts:
+                main_profile = max(profile_counts.items(), 
+                                 key=lambda x: (x[1]["max_length"], x[1]["count"]))[0]
+                max_length = profile_counts[main_profile]["max_length"]
+            
+            # Collect all IDs from parts in this assembly
+            assembly_ids = [part["id"] for part in assembly_data["parts"]]
+            
+            assemblies_list.append({
+                "assembly_mark": assembly_mark,
+                "assembly_id": assembly_data["assembly_id"],
+                "main_profile": main_profile,
+                "length": max_length,
+                "total_weight": round(assembly_data["total_weight"], 2),
+                "member_count": assembly_data["member_count"],
+                "plate_count": assembly_data["plate_count"],
+                "parts": assembly_data["parts"],
+                "ids": assembly_ids
+            })
+        
+        # Sort lists
+        profiles_list.sort(key=lambda x: (x["profile_name"], x["part_name"]))
+        plates_list.sort(key=lambda x: (x["thickness"], x["part_name"]))
+        assemblies_list.sort(key=lambda x: x["assembly_mark"])
+        
+        return JSONResponse({
+            "profiles": profiles_list,
+            "plates": plates_list,
+            "assemblies": assemblies_list
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get dashboard details: {str(e)}")
 
 
 @app.get("/api/health")
