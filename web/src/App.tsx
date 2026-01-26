@@ -4,6 +4,7 @@ import IFCViewer from './components/IFCViewer'
 import SteelReports from './components/SteelReports'
 import NestingReport from './components/NestingReport'
 import Dashboard from './components/Dashboard'
+import Shipment from './components/Shipment'
 import { SteelReport, FilterState, NestingReport as NestingReportType } from './types'
 
 function App() {
@@ -47,7 +48,7 @@ function App() {
     plateThicknesses: new Set<string>(),
     assemblyMarks: new Set<string>()
   })
-  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard'>(savedState?.activeTab || 'model')
+  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'shipment'>(savedState?.activeTab || 'model')
   const [nestingReport, setNestingReport] = useState<NestingReportType | null>(null)  // Always start with null
 
   // Save to localStorage whenever state changes (but only save filters and activeTab, not file data)
@@ -140,6 +141,16 @@ function App() {
                 >
                   Nesting
                 </button>
+                <button
+                  onClick={() => setActiveTab('shipment')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'shipment'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Shipment
+                </button>
               </div>
             </div>
 
@@ -183,6 +194,15 @@ function App() {
                   filename={currentFile} 
                   nestingReport={nestingReport}
                   onNestingReportChange={handleNestingReportChange}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'shipment' && (
+              <div className="flex-1 overflow-y-auto">
+                <Shipment 
+                  filename={currentFile}
                   report={report}
                 />
               </div>

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -109,7 +110,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
     loader.load(
       modelPath,
-      (gltf) => {
+      (gltf: GLTF) => {
         console.log('Model loaded for preview:', gltf);
         
         // Add model to scene
@@ -118,7 +119,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         // First, populate userData from metadata if needed (same as IFCViewer)
         let meshCount = 0;
         let meshesWithProductId = 0;
-        gltf.scene.traverse((child) => {
+        gltf.scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
             meshCount++;
             if (!child.userData) child.userData = {};
@@ -164,7 +165,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         const selectedMeshes: THREE.Mesh[] = [];
         
         // First pass: find the selected mesh and calculate its bounding box
-        gltf.scene.traverse((child) => {
+        gltf.scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
             const productId = child.userData?.product_id || 
                             child.userData?.expressID || 
@@ -212,7 +213,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         let checkedMeshes = 0;
         let fastenerCount = 0;
         
-        gltf.scene.traverse((child) => {
+        gltf.scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
             checkedMeshes++;
             const productId = child.userData?.product_id || 
@@ -358,10 +359,10 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
         setLoading(false);
       },
-      (progress) => {
+      (progress: ProgressEvent) => {
         console.log('Loading progress:', (progress.loaded / progress.total) * 100 + '%');
       },
-      (error) => {
+      (error: unknown) => {
         console.error('Error loading model:', error);
         setError('Failed to load 3D model');
         setLoading(false);

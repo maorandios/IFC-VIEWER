@@ -22,6 +22,7 @@ interface PlateDetail {
   part_name: string
   assembly_mark: string
   thickness: string
+  profile_name: string
   width: number | null
   length: number | null
   weight: number
@@ -421,6 +422,7 @@ export default function Dashboard({ filename, report }: DashboardProps) {
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plate Name</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assembly</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile Name</th>
                             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Width (mm)</th>
                             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Length (mm)</th>
                             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Weight (kg)</th>
@@ -435,6 +437,7 @@ export default function Dashboard({ filename, report }: DashboardProps) {
                               <td className="px-4 py-3 text-sm text-gray-900">{plate.part_name}</td>
                               <td className="px-4 py-3 text-sm text-gray-600">{plate.assembly_mark}</td>
                               <td className="px-4 py-3 text-sm font-medium text-blue-600">{plate.thickness}</td>
+                              <td className="px-4 py-3 text-sm font-medium text-green-600">{plate.profile_name}</td>
                               <td className="px-4 py-3 text-sm text-right text-gray-900">
                                 {plate.width ? plate.width.toFixed(1) : 'N/A'}
                               </td>
@@ -463,7 +466,7 @@ export default function Dashboard({ filename, report }: DashboardProps) {
                         </tbody>
                         <tfoot className="bg-gray-100">
                           <tr>
-                            <td colSpan={6} className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                            <td colSpan={7} className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
                               Total ({details.plates.reduce((sum, p) => sum + p.quantity, 0)} parts):
                             </td>
                             <td className="px-4 py-3 text-sm font-bold text-blue-600 text-right">
@@ -528,7 +531,8 @@ export default function Dashboard({ filename, report }: DashboardProps) {
                                   <tr>
                                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part Name</th>
                                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Profile/Thickness</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Profile Name</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Thickness</th>
                                     <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Length (mm)</th>
                                     <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Weight (kg)</th>
                                   </tr>
@@ -540,8 +544,11 @@ export default function Dashboard({ filename, report }: DashboardProps) {
                                       <td className="px-3 py-2 text-sm text-gray-600">
                                         {part.part_type === 'profile' ? 'Profile' : 'Plate'}
                                       </td>
+                                      <td className="px-3 py-2 text-sm font-medium text-green-600">
+                                        {part.profile_name || 'N/A'}
+                                      </td>
                                       <td className="px-3 py-2 text-sm text-blue-600">
-                                        {part.part_type === 'profile' ? part.profile_name : part.thickness}
+                                        {part.part_type === 'plate' ? part.thickness : '-'}
                                       </td>
                                       <td className="px-3 py-2 text-sm text-right text-gray-900">
                                         {part.length ? part.length.toFixed(1) : 'N/A'}

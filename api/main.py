@@ -5242,6 +5242,14 @@ async def get_dashboard_details(filename: str):
             elif element_type in ["IfcPlate", "IfcSlab"]:
                 thickness = get_plate_thickness(element)
                 
+                # Get Description attribute (contains profile info like "P:20*2190")
+                description = ""
+                try:
+                    if hasattr(element, 'Description') and element.Description:
+                        description = str(element.Description).strip()
+                except:
+                    pass
+                
                 # Round dimensions to avoid floating point differences
                 width_rounded = round(width, 1) if width else None
                 length_rounded = round(length, 1) if length else None
@@ -5275,13 +5283,16 @@ async def get_dashboard_details(filename: str):
                         "total_weight": 0.0,
                         "ids": [],
                         "assemblies": set(),  # Track unique assemblies
-                        "part_names": set()  # Track all part names in this group
+                        "part_names": set(),  # Track all part names in this group
+                        "descriptions": set()  # Track all descriptions (profile names) in this group
                     }
                 
-                # Track assemblies and part names for this group
+                # Track assemblies, part names, and descriptions for this group
                 plates_dict[group_key]["assemblies"].add(assembly_mark)
                 if not part_is_guid:
                     plates_dict[group_key]["part_names"].add(part_name)
+                if description:
+                    plates_dict[group_key]["descriptions"].add(description)
                 
                 plates_dict[group_key]["quantity"] += 1
                 plates_dict[group_key]["total_weight"] += weight
@@ -5302,6 +5313,7 @@ async def get_dashboard_details(filename: str):
                     "id": element_id,
                     "part_name": part_name,
                     "thickness": thickness,
+                    "profile_name": description if description else "N/A",  # Add profile_name from Description
                     "width": width_rounded,
                     "length": length_rounded,
                     "weight": round(weight, 2),
@@ -5365,10 +5377,20 @@ async def get_dashboard_details(filename: str):
                 # All assemblies are GUIDs
                 display_assembly = "Various"
             
+            # Get profile name from descriptions
+            descriptions = plate_data.get("descriptions", set())
+            if descriptions:
+                # If there are descriptions, show them (comma separated if multiple)
+                profile_name = ", ".join(sorted(descriptions))
+            else:
+                # No description available
+                profile_name = "N/A"
+            
             plates_list.append({
                 "part_name": display_name,
                 "assembly_mark": display_assembly,
                 "thickness": plate_data["thickness"],
+                "profile_name": profile_name,  # Add profile_name field
                 "width": plate_data["width"],
                 "length": plate_data["length"],
                 "weight": round(plate_data["weight"], 2),
@@ -5399,6 +5421,32 @@ async def get_dashboard_details(filename: str):
                 main_profile = max(profile_counts.items(), 
                                  key=lambda x: (x[1]["max_length"], x[1]["count"]))[0]
                 max_length = profile_counts[main_profile]["max_length"]
+            else:
+                # No profiles found - this is a plate-only assembly
+                # Try to use profile_name from plates first, otherwise fall back to thickness
+                plate_profiles = {}
+                for part in assembly_data["parts"]:
+                    if part["part_type"] == "plate":
+                        profile_name = part.get("profile_name", "")
+                        if profile_name and profile_name != "N/A":
+                            plate_profiles[profile_name] = plate_profiles.get(profile_name, 0) + 1
+                
+                if plate_profiles:
+                    # Get the most common profile name
+                    most_common_profile = max(plate_profiles.items(), key=lambda x: x[1])[0]
+                    main_profile = most_common_profile
+                else:
+                    # Fallback to thickness if no profile name available
+                    plate_thickness_counts = {}
+                    for part in assembly_data["parts"]:
+                        if part["part_type"] == "plate":
+                            thickness = part.get("thickness", "N/A")
+                            plate_thickness_counts[thickness] = plate_thickness_counts.get(thickness, 0) + 1
+                    
+                    if plate_thickness_counts:
+                        # Get the most common thickness
+                        most_common_thickness = max(plate_thickness_counts.items(), key=lambda x: x[1])[0]
+                        main_profile = f"Plate {most_common_thickness}"
             
             # Collect all IDs from parts in this assembly
             assembly_ids = [part["id"] for part in assembly_data["parts"]]
@@ -5430,6 +5478,180 @@ async def get_dashboard_details(filename: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get dashboard details: {str(e)}")
+
+
+@app.get("/api/shipment-assemblies/{filename}")
+async def get_shipment_assemblies(filename: str):
+    """Get individual assembly instances for shipment (NO GROUPING).
+    
+    Each assembly instance gets its own row, even if they have the same assembly_mark.
+    Returns list of assemblies with: assembly_mark, main_profile, length, weight, ids
+    """
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    file_path = IFC_DIR / decoded_filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="IFC file not found")
+    
+    try:
+        # Resolve path to absolute for Windows compatibility
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
+        
+        # Track individual assembly instances
+        # We'll use assembly_id (the actual IFC element representing the assembly) as unique identifier
+        assemblies_by_id = {}
+        
+        # Iterate through all steel elements
+        for element in ifc_file.by_type("IfcProduct"):
+            element_type = element.is_a()
+            
+            if element_type not in STEEL_TYPES:
+                continue
+            
+            element_id = element.id()
+            
+            # Get weight
+            weight = get_element_weight(element)
+            
+            # Get assembly info
+            assembly_mark, assembly_id = get_assembly_info(element)
+            
+            # Skip if no assembly_id (not part of an assembly)
+            if not assembly_id:
+                continue
+            
+            # Get dimensions from property sets
+            psets = ifcopenshell.util.element.get_psets(element)
+            length = None
+            
+            for pset_name, props in psets.items():
+                if 'Length' in props and props['Length']:
+                    length = float(props['Length'])
+                    break
+            
+            # Initialize assembly if not seen before
+            if assembly_id not in assemblies_by_id:
+                assemblies_by_id[assembly_id] = {
+                    "assembly_mark": assembly_mark,
+                    "assembly_id": assembly_id,
+                    "parts": [],
+                    "total_weight": 0.0,
+                    "member_count": 0,
+                    "plate_count": 0
+                }
+            
+            # Process profiles (beams, columns, members)
+            if element_type in ["IfcBeam", "IfcColumn", "IfcMember"]:
+                profile_name = get_profile_name(element)
+                
+                assemblies_by_id[assembly_id]["parts"].append({
+                    "id": element_id,
+                    "profile_name": profile_name,
+                    "length": length,
+                    "weight": weight,
+                    "part_type": "profile"
+                })
+                assemblies_by_id[assembly_id]["total_weight"] += weight
+                assemblies_by_id[assembly_id]["member_count"] += 1
+            
+            # Process plates
+            elif element_type in ["IfcPlate", "IfcSlab"]:
+                thickness = get_plate_thickness(element)
+                
+                # Get Description attribute (contains profile info like "P:20*2190")
+                description = ""
+                try:
+                    if hasattr(element, 'Description') and element.Description:
+                        description = str(element.Description).strip()
+                except:
+                    pass
+                
+                assemblies_by_id[assembly_id]["parts"].append({
+                    "id": element_id,
+                    "weight": weight,
+                    "thickness": thickness,
+                    "description": description,  # Store Description for use in main_profile
+                    "part_type": "plate"
+                })
+                assemblies_by_id[assembly_id]["total_weight"] += weight
+                assemblies_by_id[assembly_id]["plate_count"] += 1
+        
+        # Convert to list and calculate main profile for each assembly
+        assemblies_list = []
+        for assembly_id, assembly_data in assemblies_by_id.items():
+            # Find the most common profile in this assembly
+            profile_counts = {}
+            main_profile = "N/A"
+            max_length = 0
+            
+            for part in assembly_data["parts"]:
+                if part["part_type"] == "profile":
+                    profile = part["profile_name"]
+                    if profile not in profile_counts:
+                        profile_counts[profile] = {"count": 0, "max_length": 0}
+                    profile_counts[profile]["count"] += 1
+                    if part["length"] and part["length"] > profile_counts[profile]["max_length"]:
+                        profile_counts[profile]["max_length"] = part["length"]
+            
+            # Get the profile with the longest length (main structural member)
+            if profile_counts:
+                main_profile = max(profile_counts.items(), 
+                                 key=lambda x: (x[1]["max_length"], x[1]["count"]))[0]
+                max_length = profile_counts[main_profile]["max_length"]
+            else:
+                # No profiles found - this is a plate-only assembly
+                # Try to use Description first (e.g., "P:20*2190"), otherwise fall back to thickness
+                plate_descriptions = {}
+                for part in assembly_data["parts"]:
+                    if part["part_type"] == "plate":
+                        description = part.get("description", "")
+                        if description:
+                            plate_descriptions[description] = plate_descriptions.get(description, 0) + 1
+                
+                if plate_descriptions:
+                    # Get the most common description
+                    most_common_description = max(plate_descriptions.items(), key=lambda x: x[1])[0]
+                    main_profile = most_common_description
+                else:
+                    # Fallback to thickness if no description available
+                    plate_thickness_counts = {}
+                    for part in assembly_data["parts"]:
+                        if part["part_type"] == "plate":
+                            thickness = part.get("thickness", "N/A")
+                            plate_thickness_counts[thickness] = plate_thickness_counts.get(thickness, 0) + 1
+                    
+                    if plate_thickness_counts:
+                        # Get the most common thickness
+                        most_common_thickness = max(plate_thickness_counts.items(), key=lambda x: x[1])[0]
+                        main_profile = f"Plate {most_common_thickness}"
+            
+            # Collect all IDs from parts in this assembly
+            assembly_ids = [part["id"] for part in assembly_data["parts"]]
+            
+            assemblies_list.append({
+                "assembly_mark": assembly_data["assembly_mark"],
+                "assembly_id": assembly_id,
+                "main_profile": main_profile,
+                "length": round(max_length, 1) if max_length else 0,
+                "weight": round(assembly_data["total_weight"], 2),
+                "member_count": assembly_data["member_count"],
+                "plate_count": assembly_data["plate_count"],
+                "ids": assembly_ids
+            })
+        
+        # Sort by assembly mark
+        assemblies_list.sort(key=lambda x: x["assembly_mark"])
+        
+        return JSONResponse({
+            "assemblies": assemblies_list
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get shipment assemblies: {str(e)}")
 
 
 @app.get("/api/health")
