@@ -161,8 +161,14 @@ The frontend will be available at `http://localhost:5173`
 
 ### Backend Issues
 
+- **Server appears to hang when testing**: See [SERVER_TESTING_GUIDE.md](SERVER_TESTING_GUIDE.md) for complete troubleshooting
+  - Use `C:\IFC2026\api\check_server.ps1` to check if server is already running
+  - Use `C:\IFC2026\api\test_server.ps1` to test if server is responding
+  - Use `C:\IFC2026\api\restart_server.ps1` to restart the server
+
 - **IfcOpenShell installation fails**: Ensure you have the required system dependencies. On Windows, you may need Visual C++ redistributables.
-- **Port 8000 already in use**: Change the port in the uvicorn command: `--port 8001`
+
+- **Port 8000 already in use**: The server is likely already running. Use the scripts above to check and manage the server.
 
 ### Frontend Issues
 

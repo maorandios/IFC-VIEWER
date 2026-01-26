@@ -5216,9 +5216,9 @@ async def get_dashboard_details(filename: str):
                 profiles_dict[group_key]["total_weight"] += weight
                 profiles_dict[group_key]["ids"].append(element_id)
                 
-                # Add to assembly
-                if assembly_mark not in assemblies_dict:
-                    assemblies_dict[assembly_mark] = {
+                # Add to assembly (use assembly_id as key to track individual instances)
+                if assembly_id not in assemblies_dict:
+                    assemblies_dict[assembly_id] = {
                         "assembly_mark": assembly_mark,
                         "assembly_id": assembly_id,
                         "parts": [],
@@ -5227,7 +5227,7 @@ async def get_dashboard_details(filename: str):
                         "plate_count": 0
                     }
                 
-                assemblies_dict[assembly_mark]["parts"].append({
+                assemblies_dict[assembly_id]["parts"].append({
                     "id": element_id,
                     "part_name": part_name,
                     "profile_name": profile_name,
@@ -5235,8 +5235,8 @@ async def get_dashboard_details(filename: str):
                     "weight": round(weight, 2),
                     "part_type": "profile"
                 })
-                assemblies_dict[assembly_mark]["total_weight"] += weight
-                assemblies_dict[assembly_mark]["member_count"] += 1
+                assemblies_dict[assembly_id]["total_weight"] += weight
+                assemblies_dict[assembly_id]["member_count"] += 1
             
             # Process plates
             elif element_type in ["IfcPlate", "IfcSlab"]:
@@ -5298,9 +5298,9 @@ async def get_dashboard_details(filename: str):
                 plates_dict[group_key]["total_weight"] += weight
                 plates_dict[group_key]["ids"].append(element_id)
                 
-                # Add to assembly
-                if assembly_mark not in assemblies_dict:
-                    assemblies_dict[assembly_mark] = {
+                # Add to assembly (use assembly_id as key to track individual instances)
+                if assembly_id not in assemblies_dict:
+                    assemblies_dict[assembly_id] = {
                         "assembly_mark": assembly_mark,
                         "assembly_id": assembly_id,
                         "parts": [],
@@ -5309,7 +5309,7 @@ async def get_dashboard_details(filename: str):
                         "plate_count": 0
                     }
                 
-                assemblies_dict[assembly_mark]["parts"].append({
+                assemblies_dict[assembly_id]["parts"].append({
                     "id": element_id,
                     "part_name": part_name,
                     "thickness": thickness,
@@ -5319,8 +5319,8 @@ async def get_dashboard_details(filename: str):
                     "weight": round(weight, 2),
                     "part_type": "plate"
                 })
-                assemblies_dict[assembly_mark]["total_weight"] += weight
-                assemblies_dict[assembly_mark]["plate_count"] += 1
+                assemblies_dict[assembly_id]["total_weight"] += weight
+                assemblies_dict[assembly_id]["plate_count"] += 1
         
         # Convert profiles dict to list
         profiles_list = []
@@ -5401,7 +5401,7 @@ async def get_dashboard_details(filename: str):
         
         # Convert assemblies dict to list and calculate main profile
         assemblies_list = []
-        for assembly_mark, assembly_data in assemblies_dict.items():
+        for assembly_id_key, assembly_data in assemblies_dict.items():
             # Find the most common profile in this assembly
             profile_counts = {}
             main_profile = "N/A"
@@ -5452,7 +5452,7 @@ async def get_dashboard_details(filename: str):
             assembly_ids = [part["id"] for part in assembly_data["parts"]]
             
             assemblies_list.append({
-                "assembly_mark": assembly_mark,
+                "assembly_mark": assembly_data["assembly_mark"],
                 "assembly_id": assembly_data["assembly_id"],
                 "main_profile": main_profile,
                 "length": max_length,
@@ -5652,6 +5652,259 @@ async def get_shipment_assemblies(filename: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get shipment assemblies: {str(e)}")
+
+
+# In-memory storage for assembly status (completed/shipped)
+# Structure: {filename: {assembly_id: {"completed": bool, "shipped": bool}}}
+assembly_status_storage = {}
+
+
+@app.get("/api/management-assemblies/{filename}")
+async def get_management_assemblies(filename: str):
+    """Get individual assembly instances for management (with completed/shipped status).
+    
+    Each assembly instance gets its own row with status tracking.
+    Returns list of assemblies with: assembly_mark, main_profile, length, weight, ids, completed, shipped
+    """
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    file_path = IFC_DIR / decoded_filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="IFC file not found")
+    
+    try:
+        # Get assemblies using the same logic as shipment endpoint
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
+        
+        assemblies_by_id = {}
+        
+        for element in ifc_file.by_type("IfcProduct"):
+            element_type = element.is_a()
+            
+            if element_type not in STEEL_TYPES:
+                continue
+            
+            element_id = element.id()
+            weight = get_element_weight(element)
+            assembly_mark, assembly_id = get_assembly_info(element)
+            
+            if not assembly_id:
+                continue
+            
+            psets = ifcopenshell.util.element.get_psets(element)
+            length = None
+            
+            for pset_name, props in psets.items():
+                if 'Length' in props and props['Length']:
+                    length = float(props['Length'])
+                    break
+            
+            if assembly_id not in assemblies_by_id:
+                assemblies_by_id[assembly_id] = {
+                    "assembly_mark": assembly_mark,
+                    "assembly_id": assembly_id,
+                    "parts": [],
+                    "total_weight": 0.0,
+                    "member_count": 0,
+                    "plate_count": 0
+                }
+            
+            if element_type in ["IfcBeam", "IfcColumn", "IfcMember"]:
+                profile_name = get_profile_name(element)
+                
+                assemblies_by_id[assembly_id]["parts"].append({
+                    "id": element_id,
+                    "profile_name": profile_name,
+                    "length": length,
+                    "weight": weight,
+                    "part_type": "profile"
+                })
+                assemblies_by_id[assembly_id]["total_weight"] += weight
+                assemblies_by_id[assembly_id]["member_count"] += 1
+            
+            elif element_type in ["IfcPlate", "IfcSlab"]:
+                thickness = get_plate_thickness(element)
+                
+                description = ""
+                try:
+                    if hasattr(element, 'Description') and element.Description:
+                        description = str(element.Description).strip()
+                except:
+                    pass
+                
+                assemblies_by_id[assembly_id]["parts"].append({
+                    "id": element_id,
+                    "weight": weight,
+                    "thickness": thickness,
+                    "description": description,
+                    "part_type": "plate"
+                })
+                assemblies_by_id[assembly_id]["total_weight"] += weight
+                assemblies_by_id[assembly_id]["plate_count"] += 1
+        
+        # Initialize storage for this file if not exists
+        if decoded_filename not in assembly_status_storage:
+            assembly_status_storage[decoded_filename] = {}
+        
+        # Convert to list and add status
+        assemblies_list = []
+        for assembly_id, assembly_data in assemblies_by_id.items():
+            # Find main profile
+            profile_counts = {}
+            main_profile = "N/A"
+            max_length = 0
+            
+            for part in assembly_data["parts"]:
+                if part["part_type"] == "profile":
+                    profile = part["profile_name"]
+                    if profile not in profile_counts:
+                        profile_counts[profile] = {"count": 0, "max_length": 0}
+                    profile_counts[profile]["count"] += 1
+                    if part["length"] and part["length"] > profile_counts[profile]["max_length"]:
+                        profile_counts[profile]["max_length"] = part["length"]
+            
+            if profile_counts:
+                main_profile = max(profile_counts.items(), 
+                                 key=lambda x: (x[1]["max_length"], x[1]["count"]))[0]
+                max_length = profile_counts[main_profile]["max_length"]
+            else:
+                plate_descriptions = {}
+                for part in assembly_data["parts"]:
+                    if part["part_type"] == "plate":
+                        description = part.get("description", "")
+                        if description:
+                            plate_descriptions[description] = plate_descriptions.get(description, 0) + 1
+                
+                if plate_descriptions:
+                    most_common_description = max(plate_descriptions.items(), key=lambda x: x[1])[0]
+                    main_profile = most_common_description
+                else:
+                    plate_thickness_counts = {}
+                    for part in assembly_data["parts"]:
+                        if part["part_type"] == "plate":
+                            thickness = part.get("thickness", "N/A")
+                            plate_thickness_counts[thickness] = plate_thickness_counts.get(thickness, 0) + 1
+                    
+                    if plate_thickness_counts:
+                        most_common_thickness = max(plate_thickness_counts.items(), key=lambda x: x[1])[0]
+                        main_profile = f"Plate {most_common_thickness}"
+            
+            assembly_ids = [part["id"] for part in assembly_data["parts"]]
+            
+            # Get status from storage
+            status = assembly_status_storage[decoded_filename].get(assembly_id, {
+                "completed": False,
+                "shipped": False
+            })
+            
+            assemblies_list.append({
+                "assembly_mark": assembly_data["assembly_mark"],
+                "assembly_id": assembly_id,
+                "main_profile": main_profile,
+                "length": round(max_length, 1) if max_length else 0,
+                "weight": round(assembly_data["total_weight"], 2),
+                "member_count": assembly_data["member_count"],
+                "plate_count": assembly_data["plate_count"],
+                "ids": assembly_ids,
+                "completed": status["completed"],
+                "shipped": status["shipped"]
+            })
+        
+        assemblies_list.sort(key=lambda x: x["assembly_mark"])
+        
+        return JSONResponse({
+            "assemblies": assemblies_list
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get management assemblies: {str(e)}")
+
+
+@app.post("/api/management-assemblies/{filename}/toggle-completed")
+async def toggle_completed(filename: str, request: Request):
+    """Toggle the completed status of an assembly."""
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    
+    try:
+        body = await request.json()
+        assembly_id = body.get("assembly_id")
+        completed = body.get("completed", False)
+        
+        if assembly_id is None:
+            raise HTTPException(status_code=400, detail="assembly_id is required")
+        
+        # Initialize storage if needed
+        if decoded_filename not in assembly_status_storage:
+            assembly_status_storage[decoded_filename] = {}
+        
+        if assembly_id not in assembly_status_storage[decoded_filename]:
+            assembly_status_storage[decoded_filename][assembly_id] = {
+                "completed": False,
+                "shipped": False
+            }
+        
+        # Update completed status
+        assembly_status_storage[decoded_filename][assembly_id]["completed"] = completed
+        
+        # If uncompleting, also unship
+        if not completed:
+            assembly_status_storage[decoded_filename][assembly_id]["shipped"] = False
+        
+        return JSONResponse({
+            "success": True,
+            "assembly_id": assembly_id,
+            "completed": completed,
+            "shipped": assembly_status_storage[decoded_filename][assembly_id]["shipped"]
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to toggle completed: {str(e)}")
+
+
+@app.post("/api/management-assemblies/{filename}/toggle-shipped")
+async def toggle_shipped(filename: str, request: Request):
+    """Toggle the shipped status of an assembly."""
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    
+    try:
+        body = await request.json()
+        assembly_id = body.get("assembly_id")
+        shipped = body.get("shipped", False)
+        
+        if assembly_id is None:
+            raise HTTPException(status_code=400, detail="assembly_id is required")
+        
+        # Initialize storage if needed
+        if decoded_filename not in assembly_status_storage:
+            assembly_status_storage[decoded_filename] = {}
+        
+        if assembly_id not in assembly_status_storage[decoded_filename]:
+            assembly_status_storage[decoded_filename][assembly_id] = {
+                "completed": False,
+                "shipped": False
+            }
+        
+        # Update shipped status
+        assembly_status_storage[decoded_filename][assembly_id]["shipped"] = shipped
+        
+        return JSONResponse({
+            "success": True,
+            "assembly_id": assembly_id,
+            "shipped": shipped
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to toggle shipped: {str(e)}")
 
 
 @app.get("/api/health")

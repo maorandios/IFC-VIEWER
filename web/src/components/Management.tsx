@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react'
 import { SteelReport } from '../types'
 import { PreviewModal } from './PreviewModal'
-import { pdf } from '@react-pdf/renderer'
-import { ShipmentReportPDF } from './ShipmentReportPDF'
 
-interface ShipmentProps {
+interface ManagementProps {
   filename: string
   report: SteelReport | null
 }
@@ -16,15 +14,17 @@ interface AssemblyRow {
   length: number
   weight: number
   ids: number[]
+  completed: boolean
+  shipped: boolean
 }
 
-export default function Shipment({ filename, report }: ShipmentProps) {
+export default function Management({ filename, report }: ManagementProps) {
   const [assemblies, setAssemblies] = useState<AssemblyRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedAssemblies, setSelectedAssemblies] = useState<Set<string>>(new Set())
   const [searchText, setSearchText] = useState('')
   const [filterProfile, setFilterProfile] = useState<string>('all')
   const [filterAssemblyName, setFilterAssemblyName] = useState<string>('all')
+  const [filterStatus, setFilterStatus] = useState<string>('all') // all, in-progress, completed, shipped
   const [previewModal, setPreviewModal] = useState<{
     isOpen: boolean
     elementIds: number[]
@@ -45,12 +45,10 @@ export default function Shipment({ filename, report }: ShipmentProps) {
   const fetchAssemblies = async () => {
     setLoading(true)
     try {
-      // Use the new shipment-assemblies endpoint that returns individual instances
-      const response = await fetch(`/api/shipment-assemblies/${encodeURIComponent(filename)}`)
+      const response = await fetch(`/api/management-assemblies/${encodeURIComponent(filename)}`)
       if (response.ok) {
         const data = await response.json()
         
-        // Convert assemblies data - each assembly instance gets its own row
         const assemblyRows: AssemblyRow[] = []
         
         if (data.assemblies && Array.isArray(data.assemblies)) {
@@ -61,12 +59,13 @@ export default function Shipment({ filename, report }: ShipmentProps) {
               main_profile: assembly.main_profile || 'N/A',
               length: assembly.length || 0,
               weight: assembly.weight || 0,
-              ids: assembly.ids || []
+              ids: assembly.ids || [],
+              completed: assembly.completed || false,
+              shipped: assembly.shipped || false
             })
           })
         }
         
-        // Already sorted by assembly mark from backend
         setAssemblies(assemblyRows)
       }
     } catch (error) {
@@ -76,51 +75,56 @@ export default function Shipment({ filename, report }: ShipmentProps) {
     }
   }
 
-  const toggleAssembly = (assemblyId: number) => {
-    const newSelected = new Set(selectedAssemblies)
-    const key = `${assemblyId}`
-    if (newSelected.has(key)) {
-      newSelected.delete(key)
-    } else {
-      newSelected.add(key)
+  const toggleCompleted = async (assemblyId: number) => {
+    try {
+      const assembly = assemblies.find(a => a.assembly_id === assemblyId)
+      if (!assembly) return
+
+      const response = await fetch(`/api/management-assemblies/${encodeURIComponent(filename)}/toggle-completed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assembly_id: assemblyId, completed: !assembly.completed })
+      })
+
+      if (response.ok) {
+        setAssemblies(assemblies.map(a => 
+          a.assembly_id === assemblyId 
+            ? { ...a, completed: !a.completed, shipped: !a.completed ? a.shipped : false } 
+            : a
+        ))
+      }
+    } catch (error) {
+      console.error('Error toggling completed status:', error)
     }
-    setSelectedAssemblies(newSelected)
   }
 
-  const toggleAllAssemblies = () => {
-    // Get filtered assemblies to determine what to select/deselect
-    const filtered = assemblies.filter((assembly) => {
-      const searchLower = searchText.toLowerCase()
-      const matchesSearch = searchText === '' || 
-        assembly.assembly_mark.toLowerCase().includes(searchLower) ||
-        assembly.main_profile.toLowerCase().includes(searchLower) ||
-        assembly.length.toString().includes(searchLower) ||
-        assembly.weight.toString().includes(searchLower)
-      const matchesProfile = filterProfile === 'all' || assembly.main_profile === filterProfile
-      const matchesAssemblyName = filterAssemblyName === 'all' || assembly.assembly_mark === filterAssemblyName
-      return matchesSearch && matchesProfile && matchesAssemblyName
-    })
-    
-    // Check if all filtered items are selected
-    const allFilteredSelected = filtered.every((assembly) => 
-      selectedAssemblies.has(`${assembly.assembly_id}`)
-    )
-    
-    const newSelected = new Set(selectedAssemblies)
-    
-    if (allFilteredSelected) {
-      // Deselect all filtered items
-      filtered.forEach((assembly) => {
-        newSelected.delete(`${assembly.assembly_id}`)
+  const toggleShipped = async (assemblyId: number) => {
+    try {
+      const assembly = assemblies.find(a => a.assembly_id === assemblyId)
+      if (!assembly) return
+
+      // Can only ship completed assemblies
+      if (!assembly.completed && !assembly.shipped) {
+        alert('Cannot ship an assembly that is not completed')
+        return
+      }
+
+      const response = await fetch(`/api/management-assemblies/${encodeURIComponent(filename)}/toggle-shipped`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assembly_id: assemblyId, shipped: !assembly.shipped })
       })
-    } else {
-      // Select all filtered items
-      filtered.forEach((assembly) => {
-        newSelected.add(`${assembly.assembly_id}`)
-      })
+
+      if (response.ok) {
+        setAssemblies(assemblies.map(a => 
+          a.assembly_id === assemblyId 
+            ? { ...a, shipped: !a.shipped } 
+            : a
+        ))
+      }
+    } catch (error) {
+      console.error('Error toggling shipped status:', error)
     }
-    
-    setSelectedAssemblies(newSelected)
   }
 
   const openPreview = (elementIds: number[], title: string) => {
@@ -139,53 +143,31 @@ export default function Shipment({ filename, report }: ShipmentProps) {
     })
   }
 
-  const handleExportPDF = async () => {
-    if (selectedAssemblies.size === 0) return
-
-    try {
-      // Get the selected assemblies data
-      const selectedAssembliesData = assemblies.filter(assembly => 
-        selectedAssemblies.has(`${assembly.assembly_id}`)
-      )
-
-      // Format current date
-      const currentDate = new Date().toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-
-      // Create PDF document
-      const doc = <ShipmentReportPDF 
-        assemblies={selectedAssembliesData}
-        filename={filename}
-        currentDate={currentDate}
-      />
-      
-      // Generate and download PDF
-      const asPdf = pdf(doc)
-      const blob = await asPdf.toBlob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${filename.replace('.ifc', '')}_shipment_report.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Error exporting to PDF:', error)
-      alert('Failed to export PDF. Please try again.')
+  // Calculate statistics
+  const stats = {
+    total: {
+      count: assemblies.length,
+      tonnage: assemblies.reduce((sum, a) => sum + a.weight, 0) / 1000
+    },
+    completed: {
+      count: assemblies.filter(a => a.completed).length,
+      tonnage: assemblies.filter(a => a.completed).reduce((sum, a) => sum + a.weight, 0) / 1000
+    },
+    shipped: {
+      count: assemblies.filter(a => a.shipped).length,
+      tonnage: assemblies.filter(a => a.shipped).reduce((sum, a) => sum + a.weight, 0) / 1000
     }
   }
+
+  const completedPercentage = stats.total.count > 0 ? (stats.completed.count / stats.total.count * 100).toFixed(1) : '0.0'
+  const shippedPercentage = stats.total.count > 0 ? (stats.shipped.count / stats.total.count * 100).toFixed(1) : '0.0'
 
   // Get unique profiles and assembly names for filters
   const uniqueProfiles = Array.from(new Set(assemblies.map(a => a.main_profile))).sort()
   const uniqueAssemblyNames = Array.from(new Set(assemblies.map(a => a.assembly_mark))).sort()
 
-  // Filter assemblies based on search and filters
+  // Filter assemblies
   const filteredAssemblies = assemblies.filter((assembly) => {
-    // Free text search - searches across assembly name, profile, length, and weight
     const searchLower = searchText.toLowerCase()
     const matchesSearch = searchText === '' || 
       assembly.assembly_mark.toLowerCase().includes(searchLower) ||
@@ -193,13 +175,19 @@ export default function Shipment({ filename, report }: ShipmentProps) {
       assembly.length.toString().includes(searchLower) ||
       assembly.weight.toString().includes(searchLower)
 
-    // Filter by profile
     const matchesProfile = filterProfile === 'all' || assembly.main_profile === filterProfile
-
-    // Filter by assembly name
     const matchesAssemblyName = filterAssemblyName === 'all' || assembly.assembly_mark === filterAssemblyName
+    
+    let matchesStatus = true
+    if (filterStatus === 'in-progress') {
+      matchesStatus = !assembly.completed && !assembly.shipped
+    } else if (filterStatus === 'completed') {
+      matchesStatus = assembly.completed && !assembly.shipped
+    } else if (filterStatus === 'shipped') {
+      matchesStatus = assembly.shipped
+    }
 
-    return matchesSearch && matchesProfile && matchesAssemblyName
+    return matchesSearch && matchesProfile && matchesAssemblyName && matchesStatus
   })
 
   // Clear all filters
@@ -207,6 +195,7 @@ export default function Shipment({ filename, report }: ShipmentProps) {
     setSearchText('')
     setFilterProfile('all')
     setFilterAssemblyName('all')
+    setFilterStatus('all')
   }
 
   if (loading) {
@@ -224,81 +213,85 @@ export default function Shipment({ filename, report }: ShipmentProps) {
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Shipment</h1>
-            <p className="text-gray-600">
-              Select assemblies to include in shipment report
-            </p>
-          </div>
-          <button
-            onClick={handleExportPDF}
-            disabled={selectedAssemblies.size === 0}
-            className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-              selectedAssemblies.size === 0
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            Export PDF ({selectedAssemblies.size} selected)
-          </button>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Production Management</h1>
+          <p className="text-gray-600">
+            Track assembly production, completion, and shipment status
+          </p>
         </div>
 
-        {/* Summary Cards */}
+        {/* Statistics Cards */}
         {assemblies.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             {/* Total Assemblies Card */}
             <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">
                     Total Assemblies
                   </p>
                   <p className="text-3xl font-bold text-gray-900">
-                    {assemblies.length}
+                    {stats.total.count}
                   </p>
                 </div>
                 <div className="text-4xl opacity-20">
-                  📦
+                  🏗️
                 </div>
+              </div>
+              <div className="border-t pt-3">
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-gray-900">{stats.total.tonnage.toFixed(3)}</span> tonnes
+                </p>
               </div>
             </div>
 
-            {/* Selected Assemblies Card */}
+            {/* Completed Card */}
             <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">
-                    Selected
+                    Completed
                   </p>
-                  <p className="text-3xl font-bold text-blue-600">
-                    {selectedAssemblies.size}
+                  <p className="text-3xl font-bold text-green-600">
+                    {stats.completed.count}
                   </p>
                 </div>
                 <div className="text-4xl opacity-20">
                   ✓
                 </div>
               </div>
+              <div className="border-t pt-3 space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-green-600">{completedPercentage}%</span> of total
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-gray-900">{stats.completed.tonnage.toFixed(3)}</span> tonnes
+                </p>
+              </div>
             </div>
 
-            {/* Total Weight Card */}
+            {/* Shipped Card */}
             <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">
-                    Total Weight (Selected)
+                    Shipped
                   </p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {assemblies
-                      .filter((assembly) => selectedAssemblies.has(`${assembly.assembly_id}`))
-                      .reduce((sum, assembly) => sum + assembly.weight, 0)
-                      .toFixed(2)}
-                    <span className="text-xl font-normal text-gray-600 ml-2">kg</span>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {stats.shipped.count}
                   </p>
                 </div>
                 <div className="text-4xl opacity-20">
-                  ⚖️
+                  🚚
                 </div>
+              </div>
+              <div className="border-t pt-3 space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-blue-600">{shippedPercentage}%</span> of total
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-gray-900">{stats.shipped.tonnage.toFixed(3)}</span> tonnes
+                </p>
               </div>
             </div>
           </div>
@@ -317,7 +310,7 @@ export default function Shipment({ filename, report }: ShipmentProps) {
               </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Free Text Search */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -379,6 +372,23 @@ export default function Shipment({ filename, report }: ShipmentProps) {
                   ))}
                 </select>
               </div>
+
+              {/* Filter by Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All Status</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="shipped">Shipped</option>
+                </select>
+              </div>
             </div>
 
             {/* Results Counter */}
@@ -394,16 +404,6 @@ export default function Shipment({ filename, report }: ShipmentProps) {
             <table className="w-full">
               <thead className="bg-gray-100 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={filteredAssemblies.length > 0 && filteredAssemblies.every((assembly) => 
-                        selectedAssemblies.has(`${assembly.assembly_id}`)
-                      )}
-                      onChange={toggleAllAssemblies}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Assembly Name
                   </th>
@@ -417,6 +417,12 @@ export default function Shipment({ filename, report }: ShipmentProps) {
                     Weight (kg)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Completed
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Shipped
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Preview
                   </th>
                 </tr>
@@ -424,30 +430,23 @@ export default function Shipment({ filename, report }: ShipmentProps) {
               <tbody className="divide-y divide-gray-200">
                 {filteredAssemblies.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                       {assemblies.length === 0 ? 'No assemblies found' : 'No assemblies match the current filters'}
                     </td>
                   </tr>
                 ) : (
                   filteredAssemblies.map((assembly) => {
-                    const assemblyKey = `${assembly.assembly_id}`
-                    const isSelected = selectedAssemblies.has(assemblyKey)
+                    const statusColor = assembly.shipped 
+                      ? 'bg-blue-50' 
+                      : assembly.completed 
+                        ? 'bg-green-50' 
+                        : 'bg-white'
                     
                     return (
                       <tr
-                        key={assemblyKey}
-                        className={`hover:bg-gray-50 transition-colors ${
-                          isSelected ? 'bg-blue-50' : ''
-                        }`}
+                        key={`${assembly.assembly_id}`}
+                        className={`hover:bg-gray-50 transition-colors ${statusColor}`}
                       >
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleAssembly(assembly.assembly_id!)}
-                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                          />
-                        </td>
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {assembly.assembly_mark}
                         </td>
@@ -459,6 +458,27 @@ export default function Shipment({ filename, report }: ShipmentProps) {
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           {assembly.weight.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={assembly.completed}
+                            onChange={() => toggleCompleted(assembly.assembly_id!)}
+                            className="w-5 h-5 text-green-600 rounded focus:ring-green-500 cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={assembly.shipped}
+                            onChange={() => toggleShipped(assembly.assembly_id!)}
+                            disabled={!assembly.completed && !assembly.shipped}
+                            className={`w-5 h-5 text-blue-600 rounded focus:ring-blue-500 ${
+                              !assembly.completed && !assembly.shipped 
+                                ? 'cursor-not-allowed opacity-40' 
+                                : 'cursor-pointer'
+                            }`}
+                          />
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button

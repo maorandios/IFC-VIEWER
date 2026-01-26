@@ -5,6 +5,10 @@ import SteelReports from './components/SteelReports'
 import NestingReport from './components/NestingReport'
 import Dashboard from './components/Dashboard'
 import Shipment from './components/Shipment'
+import Management from './components/Management'
+import ProfilesTab from './components/ProfilesTab'
+import PlatesTab from './components/PlatesTab'
+import AssembliesTab from './components/AssembliesTab'
 import { SteelReport, FilterState, NestingReport as NestingReportType } from './types'
 
 function App() {
@@ -48,7 +52,7 @@ function App() {
     plateThicknesses: new Set<string>(),
     assemblyMarks: new Set<string>()
   })
-  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'shipment'>(savedState?.activeTab || 'model')
+  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'profiles' | 'plates' | 'assemblies' | 'shipment' | 'management'>(savedState?.activeTab || 'model')
   const [nestingReport, setNestingReport] = useState<NestingReportType | null>(null)  // Always start with null
 
   // Save to localStorage whenever state changes (but only save filters and activeTab, not file data)
@@ -132,6 +136,36 @@ function App() {
                   Model
                 </button>
                 <button
+                  onClick={() => setActiveTab('profiles')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'profiles'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Profiles
+                </button>
+                <button
+                  onClick={() => setActiveTab('plates')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'plates'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Plates
+                </button>
+                <button
+                  onClick={() => setActiveTab('assemblies')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'assemblies'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Assemblies
+                </button>
+                <button
                   onClick={() => setActiveTab('nesting')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'nesting'
@@ -150,6 +184,16 @@ function App() {
                   }`}
                 >
                   Shipment
+                </button>
+                <button
+                  onClick={() => setActiveTab('management')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'management'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Management
                 </button>
               </div>
             </div>
@@ -188,6 +232,33 @@ function App() {
               </div>
             )}
 
+            {activeTab === 'profiles' && (
+              <div className="flex-1 overflow-y-auto">
+                <ProfilesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'plates' && (
+              <div className="flex-1 overflow-y-auto">
+                <PlatesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'assemblies' && (
+              <div className="flex-1 overflow-y-auto">
+                <AssembliesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
             {activeTab === 'nesting' && (
               <div className="flex-1 overflow-hidden">
                 <NestingReport 
@@ -202,6 +273,15 @@ function App() {
             {activeTab === 'shipment' && (
               <div className="flex-1 overflow-y-auto">
                 <Shipment 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'management' && (
+              <div className="flex-1 overflow-y-auto">
+                <Management 
                   filename={currentFile}
                   report={report}
                 />
