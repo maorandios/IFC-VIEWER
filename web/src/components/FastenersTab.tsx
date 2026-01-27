@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { SteelReport } from '../types'
 import { PreviewModal } from './PreviewModal'
+import { pdf } from '@react-pdf/renderer'
+import { FastenersReportPDF } from './FastenersReportPDF'
 
 interface FastenersTabProps {
   filename: string
@@ -10,9 +12,8 @@ interface FastenersTabProps {
 interface FastenerDetail {
   anchor_name: string
   assembly_mark: string
-  diameter: number | null
+  profile_name: string
   length: number | null
-  material: string
   weight: number
   quantity: number
   total_weight: number
@@ -81,8 +82,7 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
     const searchLower = searchText.toLowerCase()
     const matchesSearch = searchText === '' || 
       fastener.anchor_name.toLowerCase().includes(searchLower) ||
-      (fastener.material || '').toLowerCase().includes(searchLower) ||
-      (fastener.diameter?.toString() || '').includes(searchLower) ||
+      (fastener.profile_name || '').toLowerCase().includes(searchLower) ||
       (fastener.length?.toString() || '').includes(searchLower) ||
       fastener.assembly_mark.toLowerCase().includes(searchLower)
 
@@ -96,6 +96,41 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
     setSearchText('')
     setFilterAnchorName('all')
     setFilterAssembly('all')
+  }
+
+  const handleExportPDF = async () => {
+    if (filteredFasteners.length === 0) return
+
+    try {
+      // Get current date
+      const currentDate = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+
+      // Create PDF document with filtered fasteners
+      const doc = <FastenersReportPDF 
+        fasteners={filteredFasteners}
+        filename={filename}
+        currentDate={currentDate}
+      />
+      
+      // Generate and download PDF
+      const asPdf = pdf(doc)
+      const blob = await asPdf.toBlob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${filename.replace('.ifc', '')}_fasteners_report.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error exporting to PDF:', error)
+      alert('Failed to export PDF. Please try again.')
+    }
   }
 
   if (loading) {
@@ -112,12 +147,30 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Fasteners</h1>
-          <p className="text-gray-600">
-            View and filter all anchor rods and fastening elements
-          </p>
+        {/* Header with Export Button */}
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Fasteners</h1>
+            <p className="text-gray-600">
+              View and filter all anchor rods and fastening elements
+            </p>
+          </div>
+          {fasteners.length > 0 && (
+            <button
+              onClick={handleExportPDF}
+              disabled={filteredFasteners.length === 0}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                filteredFasteners.length === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export to PDF
+            </button>
+          )}
         </div>
 
         {/* Summary Cards */}
@@ -275,9 +328,8 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Anchor Name</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Assembly Name</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Diameter (mm)</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Profile Name</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Length (mm)</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Material</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
@@ -287,22 +339,19 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
               <tbody className="divide-y divide-gray-200">
                 {filteredFasteners.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       {fasteners.length === 0 ? 'No fasteners found' : 'No fasteners match the current filters'}
                     </td>
                   </tr>
                 ) : (
                   filteredFasteners.map((fastener, index) => (
-                    <tr key={`${fastener.anchor_name}-${fastener.diameter}-${fastener.length}-${index}`} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <tr key={`${fastener.anchor_name}-${fastener.profile_name}-${fastener.length}-${index}`} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{fastener.anchor_name}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{fastener.assembly_mark}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {fastener.diameter ? fastener.diameter.toFixed(1) : 'N/A'}
-                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-blue-600">{fastener.profile_name || 'N/A'}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {fastener.length ? fastener.length.toFixed(1) : 'N/A'}
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium text-blue-600">{fastener.material}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {fastener.weight.toFixed(2)}
                       </td>
@@ -327,7 +376,7 @@ export default function FastenersTab({ filename, report }: FastenersTabProps) {
               {filteredFasteners.length > 0 && (
                 <tfoot className="bg-gray-100">
                   <tr>
-                    <td colSpan={5} className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                    <td colSpan={4} className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
                       Total ({filteredFasteners.reduce((sum, f) => sum + f.quantity, 0)} pieces):
                     </td>
                     <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">

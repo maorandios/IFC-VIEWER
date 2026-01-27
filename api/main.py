@@ -5754,9 +5754,8 @@ async def get_dashboard_details(filename: str):
             fasteners_list.append({
                 "anchor_name": fastener_data["anchor_name"],
                 "assembly_mark": display_assembly,
-                "diameter": fastener_data["diameter"],
+                "profile_name": fastener_data["profile_name"],
                 "length": fastener_data["length"],
-                "material": fastener_data["material"],
                 "weight": round(fastener_data["weight"], 2),
                 "quantity": fastener_data["quantity"],
                 "total_weight": round(fastener_data["total_weight"], 2),
@@ -5768,7 +5767,7 @@ async def get_dashboard_details(filename: str):
         plates_list.sort(key=lambda x: (x["thickness"], x["part_name"]))
         assemblies_list.sort(key=lambda x: x["assembly_mark"])
         bolts_list.sort(key=lambda x: (x["bolt_name"], x["size"] or 0, x["length"] or 0))
-        fasteners_list.sort(key=lambda x: (x["anchor_name"], x["diameter"] or 0, x["length"] or 0))
+        fasteners_list.sort(key=lambda x: (x["anchor_name"], x["profile_name"] or "", x["length"] or 0))
         
         return JSONResponse({
             "profiles": profiles_list,
