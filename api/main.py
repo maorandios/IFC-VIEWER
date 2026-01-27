@@ -6210,6 +6210,218 @@ async def toggle_shipped(filename: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to toggle shipped: {str(e)}")
 
 
+@app.post("/api/generate-plate-nesting/{filename}")
+async def generate_plate_nesting(filename: str, request: Request):
+    """Generate nesting plan for plates from IFC model.
+    
+    Takes stock plate configurations and generates optimized cutting plans.
+    """
+    try:
+        from rectpack import newPacker, MaxRectsBssf
+        
+        # Get request body with stock plates configuration
+        body = await request.json()
+        stock_plates = body.get('stock_plates', [])
+        
+        if not stock_plates:
+            raise HTTPException(status_code=400, detail="No stock plates provided")
+        
+        # Get existing plate data from dashboard
+        file_path = IFC_DIR / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+        
+        # Fetch plates data (reuse existing logic)
+        ifc_file = ifcopenshell.open(str(file_path))
+        plates_dict = {}
+        
+        # Extract plates (simplified version - get dimensions)
+        for element in ifc_file.by_type("IfcProduct"):
+            element_type = element.is_a()
+            
+            if element_type == "IfcPlate":
+                # Get dimensions
+                thickness = get_plate_thickness(element)
+                
+                # Get bounding box for width and length
+                try:
+                    psets = ifcopenshell.util.element.get_psets(element)
+                    width = None
+                    length = None
+                    
+                    # Try to get dimensions from property sets
+                    for pset_name, props in psets.items():
+                        if 'Width' in props and props['Width']:
+                            width = float(props['Width'])
+                        if 'Length' in props and props['Length']:
+                            length = float(props['Length'])
+                        elif 'Height' in props and props['Height']:
+                            # Sometimes length is stored as Height
+                            length = float(props['Height'])
+                    
+                    # If no dimensions found, try to calculate from geometry
+                    if not width or not length:
+                        if HAS_GEOM:
+                            try:
+                                settings = ifcopenshell.geom.settings()
+                                shape = ifcopenshell.geom.create_shape(settings, element)
+                                if shape:
+                                    geom = shape.geometry
+                                    # Get bounding box
+                                    verts = geom.verts
+                                    if len(verts) >= 3:
+                                        import numpy as np
+                                        vertices = np.array(verts).reshape(-1, 3)
+                                        bbox_min = vertices.min(axis=0)
+                                        bbox_max = vertices.max(axis=0)
+                                        dims = bbox_max - bbox_min
+                                        # Assume largest two dimensions are width and length
+                                        sorted_dims = sorted(dims, reverse=True)
+                                        width = sorted_dims[0] if not width else width
+                                        length = sorted_dims[1] if not length else length
+                            except:
+                                pass
+                    
+                    if width and length and width > 0 and length > 0:
+                        element_name = getattr(element, 'Name', None) or f'Plate_{element.id()}'
+                        plate_key = (round(width, 1), round(length, 1), thickness)
+                        
+                        if plate_key not in plates_dict:
+                            plates_dict[plate_key] = {
+                                "width": round(width, 1),
+                                "length": round(length, 1),
+                                "thickness": thickness,
+                                "name": element_name,
+                                "quantity": 0,
+                                "ids": []
+                            }
+                        
+                        plates_dict[plate_key]["quantity"] += 1
+                        plates_dict[plate_key]["ids"].append(element.id())
+                
+                except Exception as e:
+                    print(f"Error processing plate {element.id()}: {e}")
+                    continue
+        
+        # Prepare plates for nesting (expand quantities)
+        plates_to_nest = []
+        for plate_key, plate_data in plates_dict.items():
+            for i in range(plate_data["quantity"]):
+                plates_to_nest.append({
+                    "width": plate_data["width"],
+                    "length": plate_data["length"],
+                    "thickness": plate_data["thickness"],
+                    "name": f"{plate_data['name']}-{i+1}",
+                    "id": f"{plate_key}-{i}"
+                })
+        
+        if not plates_to_nest:
+            return JSONResponse({
+                "success": False,
+                "message": "No plates found in the model with valid dimensions",
+                "cutting_plans": [],
+                "statistics": {}
+            })
+        
+        # Run nesting algorithm for each stock plate size
+        nesting_results = []
+        remaining_plates = plates_to_nest.copy()
+        stock_index = 0
+        
+        while remaining_plates and stock_index < 100:  # Limit iterations
+            # Try each stock size
+            best_result = None
+            best_stock_idx = -1
+            
+            for idx, stock in enumerate(stock_plates):
+                packer = newPacker(rotation=False, pack_algo=MaxRectsBssf)
+                packer.add_bin(stock['width'], stock['length'])
+                
+                # Add all remaining plates
+                for plate in remaining_plates:
+                    packer.add_rect(plate['width'], plate['length'], rid=plate['id'])
+                
+                packer.pack()
+                
+                # Count how many plates fit
+                packed_count = len(packer[0])
+                
+                if packed_count > 0 and (best_result is None or packed_count > len(best_result['plates'])):
+                    best_result = {
+                        'stock_width': stock['width'],
+                        'stock_length': stock['length'],
+                        'stock_index': idx,
+                        'plates': []
+                    }
+                    best_stock_idx = idx
+                    
+                    # Get packed plates
+                    for rect in packer[0]:
+                        plate_info = next(p for p in remaining_plates if p['id'] == rect.rid)
+                        best_result['plates'].append({
+                            'x': rect.x,
+                            'y': rect.y,
+                            'width': rect.width,
+                            'height': rect.height,
+                            'name': plate_info['name'],
+                            'thickness': plate_info['thickness'],
+                            'id': rect.rid
+                        })
+            
+            if best_result and best_result['plates']:
+                # Calculate utilization
+                total_plate_area = sum(p['width'] * p['height'] for p in best_result['plates'])
+                stock_area = best_result['stock_width'] * best_result['stock_length']
+                utilization = (total_plate_area / stock_area) * 100 if stock_area > 0 else 0
+                
+                best_result['utilization'] = round(utilization, 2)
+                best_result['stock_name'] = f"Stock {best_result['stock_index'] + 1}"
+                nesting_results.append(best_result)
+                
+                # Remove packed plates from remaining
+                packed_ids = set(p['id'] for p in best_result['plates'])
+                remaining_plates = [p for p in remaining_plates if p['id'] not in packed_ids]
+            else:
+                # No more plates fit
+                break
+            
+            stock_index += 1
+        
+        # Calculate statistics
+        total_plates = len(plates_to_nest)
+        nested_plates = sum(len(result['plates']) for result in nesting_results)
+        unnested_plates = total_plates - nested_plates
+        
+        total_stock_area = sum(r['stock_width'] * r['stock_length'] for r in nesting_results)
+        total_used_area = sum(sum(p['width'] * p['height'] for p in r['plates']) for r in nesting_results)
+        overall_utilization = (total_used_area / total_stock_area * 100) if total_stock_area > 0 else 0
+        waste_area = total_stock_area - total_used_area
+        
+        statistics = {
+            "total_plates": total_plates,
+            "nested_plates": nested_plates,
+            "unnested_plates": unnested_plates,
+            "stock_sheets_used": len(nesting_results),
+            "total_stock_area_m2": round(total_stock_area / 1_000_000, 2),
+            "total_used_area_m2": round(total_used_area / 1_000_000, 2),
+            "waste_area_m2": round(waste_area / 1_000_000, 2),
+            "overall_utilization": round(overall_utilization, 2),
+            "waste_percentage": round(100 - overall_utilization, 2)
+        }
+        
+        return JSONResponse({
+            "success": True,
+            "cutting_plans": nesting_results,
+            "statistics": statistics,
+            "unnested_plates": remaining_plates
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate nesting: {str(e)}")
+
+
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""

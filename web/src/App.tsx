@@ -11,6 +11,7 @@ import PlatesTab from './components/PlatesTab'
 import AssembliesTab from './components/AssembliesTab'
 import BoltsTab from './components/BoltsTab'
 import FastenersTab from './components/FastenersTab'
+import PlateNestingTab from './components/PlateNestingTab'
 import { SteelReport, FilterState, NestingReport as NestingReportType } from './types'
 
 function App() {
@@ -54,7 +55,7 @@ function App() {
     plateThicknesses: new Set<string>(),
     assemblyMarks: new Set<string>()
   })
-  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'profiles' | 'plates' | 'assemblies' | 'bolts' | 'fasteners' | 'shipment' | 'management'>(savedState?.activeTab || 'model')
+  const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'profiles' | 'plates' | 'assemblies' | 'bolts' | 'fasteners' | 'plate-nesting' | 'shipment' | 'management'>(savedState?.activeTab || 'model')
   const [nestingReport, setNestingReport] = useState<NestingReportType | null>(null)  // Always start with null
 
   // Save to localStorage whenever state changes (but only save filters and activeTab, not file data)
@@ -188,6 +189,16 @@ function App() {
                   Fasteners
                 </button>
                 <button
+                  onClick={() => setActiveTab('plate-nesting')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'plate-nesting'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Plate Nesting
+                </button>
+                <button
                   onClick={() => setActiveTab('nesting')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'nesting'
@@ -293,6 +304,15 @@ function App() {
             {activeTab === 'fasteners' && (
               <div className="flex-1 overflow-y-auto">
                 <FastenersTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'plate-nesting' && (
+              <div className="flex-1 overflow-y-auto">
+                <PlateNestingTab 
                   filename={currentFile}
                   report={report}
                 />
