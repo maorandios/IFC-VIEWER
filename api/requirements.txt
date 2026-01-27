@@ -1,1 +1,10 @@
-
+fastapi
+uvicorn[standard]
+python-multipart
+ifcopenshell
+numpy
+scipy
+trimesh
+pygltflib
+rectpack
+shapely
