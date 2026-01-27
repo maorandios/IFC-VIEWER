@@ -5108,10 +5108,179 @@ async def get_dashboard_details(filename: str):
         profiles_dict = {}  # key: (part_name, assembly_mark, profile_name, length)
         plates_dict = {}    # key: (part_name, assembly_mark, thickness, width, length)
         assemblies_dict = {}
+        bolts_dict = {}     # key: (bolt_name, size, length, standard)
+        fasteners_dict = {} # key: (anchor_name, diameter, length, standard) - for anchor rods etc.
         
         # Iterate through all steel elements
         for element in ifc_file.by_type("IfcProduct"):
             element_type = element.is_a()
+            
+            # Check if it's a fastener-like element (by name keywords)
+            is_fastener = False
+            if element_type in STEEL_TYPES:
+                # Check if it has fastener keywords in name/tag
+                element_name = getattr(element, 'Name', None) or ''
+                element_tag = getattr(element, 'Tag', None) or ''
+                element_desc = getattr(element, 'Description', None) or ''
+                
+                fastener_keywords = ['anchor', 'fastener']
+                text_content = (element_name + ' ' + element_desc + ' ' + element_tag).lower()
+                
+                if any(kw in text_content for kw in fastener_keywords):
+                    is_fastener = True
+            
+            # Process standard bolts (IfcMechanicalFastener with Tekla Bolt property set)
+            if element_type in FASTENER_TYPES and not is_fastener:
+                # Get basic info
+                element_id = element.id()
+                element_name = getattr(element, 'Name', None) or ''
+                element_tag = getattr(element, 'Tag', None) or ''
+                
+                # Get assembly info
+                assembly_mark, assembly_id = get_assembly_info(element)
+                
+                # Extract bolt data from Tekla Bolt property set
+                bolt_name = element_name
+                bolt_size = None
+                bolt_length = None
+                bolt_standard = None
+                bolt_location = None
+                bolt_count = 1  # Default to 1 if not specified
+                
+                try:
+                    psets = ifcopenshell.util.element.get_psets(element)
+                    
+                    # Check for Tekla Bolt property set
+                    if "Tekla Bolt" in psets:
+                        tekla_bolt = psets["Tekla Bolt"]
+                        bolt_name = tekla_bolt.get("Bolt Name", element_name)
+                        bolt_size = tekla_bolt.get("Bolt size", None)
+                        bolt_length = tekla_bolt.get("Bolt length", None)
+                        bolt_standard = tekla_bolt.get("Bolt standard", None)
+                        bolt_location = tekla_bolt.get("Location", None)
+                        bolt_count = tekla_bolt.get("Bolt count", 1)
+                        
+                        # Skip hole-only bolts (Bolt count = 0)
+                        # These are bolts that are hidden and used only to create holes
+                        if bolt_count == 0:
+                            continue
+                        
+                        # Skip stub bolts by comparing expected length from name vs actual length
+                        # Bolt name format: BOLTM{diameter}*{expected_length}
+                        # Example: BOLTM30*90 means diameter 30mm, expected length 90mm
+                        # If actual bolt_length is significantly less than expected, it's just a hole
+                        if bolt_name and bolt_length:
+                            import re
+                            # Parse expected length from bolt name (e.g., "BOLTM30*90" -> 90)
+                            match = re.search(r'[*xX](\d+)', bolt_name)
+                            if match:
+                                expected_length = float(match.group(1))
+                                # If actual length is less than 50% of expected, it's a hole-only bolt
+                                # Example: BOLTM16*25 expects 25mm but has only 10mm (40%)
+                                #          BOLTM10*15 expects 15mm but has only 3mm (20%)
+                                if bolt_length < (expected_length * 0.5):
+                                    continue
+                except:
+                    pass
+                
+                # If no Tekla Bolt data, try to parse from name
+                if not bolt_name or bolt_name == "Bolt assembly":
+                    bolt_name = element_name if element_name else f"Fastener_{element_id}"
+                
+                # Group key: (bolt_name, size, length, standard)
+                group_key = (bolt_name, bolt_size, bolt_length, bolt_standard)
+                
+                if group_key not in bolts_dict:
+                    bolts_dict[group_key] = {
+                        "bolt_name": bolt_name,
+                        "bolt_type": element_type,
+                        "size": bolt_size,
+                        "length": bolt_length,
+                        "standard": bolt_standard,
+                        "location": bolt_location,
+                        "quantity": 0,
+                        "assemblies": set(),
+                        "ids": []
+                    }
+                
+                # Add the actual bolt count (not just 1 per assembly)
+                # bolt_count represents the number of bolts in this bolt assembly
+                bolts_dict[group_key]["quantity"] += bolt_count
+                bolts_dict[group_key]["assemblies"].add(assembly_mark)
+                bolts_dict[group_key]["ids"].append(element_id)
+                
+                # Don't process as steel element
+                continue
+            
+            # Process fasteners (anchor rods etc. - steel types with fastener keywords)
+            if is_fastener and element_type in STEEL_TYPES:
+                # Get basic info
+                element_id = element.id()
+                element_name = getattr(element, 'Name', None) or ''
+                element_tag = getattr(element, 'Tag', None) or ''
+                
+                # Get assembly info
+                assembly_mark, assembly_id = get_assembly_info(element)
+                
+                # Get weight
+                weight = get_element_weight(element)
+                
+                # Get profile name
+                profile_name = get_profile_name(element)
+                
+                # Get dimensions and material from property sets (treat like profiles)
+                psets = ifcopenshell.util.element.get_psets(element)
+                length = None
+                diameter = None
+                material = None
+                
+                for pset_name, props in psets.items():
+                    if 'Length' in props and props['Length']:
+                        length = float(props['Length'])
+                    if 'Diameter' in props and props['Diameter']:
+                        diameter = float(props['Diameter'])
+                    if 'Material' in props and props['Material']:
+                        material = str(props['Material'])
+                    elif 'Grade' in props and props['Grade']:
+                        material = str(props['Grade'])
+                
+                # Try to extract diameter from name if not in properties (e.g., "M16" = 16mm)
+                if not diameter and element_name:
+                    import re
+                    # Look for M followed by number (e.g., M16, M20)
+                    match = re.search(r'M(\d+)', element_name.upper())
+                    if match:
+                        diameter = float(match.group(1))
+                
+                # Round values
+                length_rounded = round(length, 1) if length else None
+                diameter_rounded = round(diameter, 1) if diameter else None
+                
+                # Group key: (anchor_name, diameter, length, material)
+                group_key = (element_name, diameter_rounded, length_rounded, material)
+                
+                if group_key not in fasteners_dict:
+                    fasteners_dict[group_key] = {
+                        "anchor_name": element_name,
+                        "assembly_mark": assembly_mark,
+                        "profile_name": profile_name,
+                        "diameter": diameter_rounded,
+                        "length": length_rounded,
+                        "material": material or "N/A",
+                        "weight": weight,
+                        "quantity": 0,
+                        "total_weight": 0.0,
+                        "assemblies": set(),
+                        "ids": []
+                    }
+                
+                fasteners_dict[group_key]["quantity"] += 1
+                fasteners_dict[group_key]["total_weight"] += weight
+                fasteners_dict[group_key]["assemblies"].add(assembly_mark)
+                fasteners_dict[group_key]["ids"].append(element_id)
+                
+                # Don't process as steel element
+                continue
             
             if element_type not in STEEL_TYPES:
                 continue
@@ -5400,7 +5569,9 @@ async def get_dashboard_details(filename: str):
             })
         
         # Convert assemblies dict to list and calculate main profile
-        assemblies_list = []
+        # First, we need to group assemblies with identical configurations
+        assembly_groups = {}  # key: (assembly_mark, main_profile, length, weight)
+        
         for assembly_id_key, assembly_data in assemblies_dict.items():
             # Find the most common profile in this assembly
             profile_counts = {}
@@ -5451,27 +5622,160 @@ async def get_dashboard_details(filename: str):
             # Collect all IDs from parts in this assembly
             assembly_ids = [part["id"] for part in assembly_data["parts"]]
             
+            # Group identical assemblies by (assembly_mark, main_profile, length, weight)
+            # Round weight to avoid floating point differences
+            weight_rounded = round(assembly_data["total_weight"], 2)
+            group_key = (assembly_data["assembly_mark"], main_profile, round(max_length, 1) if max_length else 0, weight_rounded)
+            
+            if group_key not in assembly_groups:
+                assembly_groups[group_key] = {
+                    "assembly_mark": assembly_data["assembly_mark"],
+                    "assembly_id": assembly_data["assembly_id"],
+                    "main_profile": main_profile,
+                    "length": max_length,
+                    "weight": weight_rounded,
+                    "quantity": 0,
+                    "total_weight": 0.0,
+                    "member_count": assembly_data["member_count"],
+                    "plate_count": assembly_data["plate_count"],
+                    "parts": assembly_data["parts"],
+                    "ids": assembly_ids,
+                    "all_ids": []  # Will accumulate all IDs from identical assemblies
+                }
+            
+            # Update the group
+            assembly_groups[group_key]["quantity"] += 1
+            assembly_groups[group_key]["total_weight"] += weight_rounded
+            assembly_groups[group_key]["all_ids"].extend(assembly_ids)
+        
+        # Convert grouped assemblies to list
+        assemblies_list = []
+        for group_data in assembly_groups.values():
+            # Group profiles and plates within the assembly for the sub-tables
+            profiles_in_assembly = {}
+            plates_in_assembly = {}
+            
+            for part in group_data["parts"]:
+                if part["part_type"] == "profile":
+                    # Group profiles by (part_name, profile_name, length)
+                    key = (part["part_name"], part["profile_name"], part["length"])
+                    if key not in profiles_in_assembly:
+                        profiles_in_assembly[key] = {
+                            "part_name": part["part_name"],
+                            "profile_name": part["profile_name"],
+                            "length": part["length"],
+                            "weight": part["weight"],
+                            "quantity": 0,
+                            "total_weight": 0.0,
+                            "ids": []
+                        }
+                    profiles_in_assembly[key]["quantity"] += 1
+                    profiles_in_assembly[key]["total_weight"] += part["weight"]
+                    profiles_in_assembly[key]["ids"].append(part["id"])
+                
+                elif part["part_type"] == "plate":
+                    # Group plates by (part_name, thickness, width, length)
+                    key = (part["part_name"], part.get("thickness"), part.get("width"), part.get("length"))
+                    if key not in plates_in_assembly:
+                        plates_in_assembly[key] = {
+                            "part_name": part["part_name"],
+                            "thickness": part.get("thickness", "N/A"),
+                            "profile_name": part.get("profile_name", "N/A"),
+                            "width": part.get("width"),
+                            "length": part.get("length"),
+                            "weight": part["weight"],
+                            "quantity": 0,
+                            "total_weight": 0.0,
+                            "ids": []
+                        }
+                    plates_in_assembly[key]["quantity"] += 1
+                    plates_in_assembly[key]["total_weight"] += part["weight"]
+                    plates_in_assembly[key]["ids"].append(part["id"])
+            
+            # Round total_weight
+            group_data["total_weight"] = round(group_data["total_weight"], 2)
+            
             assemblies_list.append({
-                "assembly_mark": assembly_data["assembly_mark"],
-                "assembly_id": assembly_data["assembly_id"],
-                "main_profile": main_profile,
-                "length": max_length,
-                "total_weight": round(assembly_data["total_weight"], 2),
-                "member_count": assembly_data["member_count"],
-                "plate_count": assembly_data["plate_count"],
-                "parts": assembly_data["parts"],
-                "ids": assembly_ids
+                "assembly_mark": group_data["assembly_mark"],
+                "assembly_id": group_data["assembly_id"],
+                "main_profile": group_data["main_profile"],
+                "length": group_data["length"],
+                "weight": group_data["weight"],
+                "quantity": group_data["quantity"],
+                "total_weight": group_data["total_weight"],
+                "member_count": group_data["member_count"],
+                "plate_count": group_data["plate_count"],
+                "parts": group_data["parts"],
+                "profiles": list(profiles_in_assembly.values()),
+                "plates": list(plates_in_assembly.values()),
+                "ids": group_data["all_ids"]
+            })
+        
+        # Convert bolts dict to list
+        bolts_list = []
+        for bolt_data in bolts_dict.values():
+            # Get unique assemblies (excluding GUIDs)
+            assemblies = bolt_data["assemblies"]
+            non_guid_assemblies = [a for a in assemblies if not (a.startswith('ID') and len(a) > 30)]
+            
+            if non_guid_assemblies:
+                # Show actual assembly names
+                display_assembly = ", ".join(sorted(non_guid_assemblies))
+            else:
+                # All assemblies are GUIDs
+                display_assembly = "Various"
+            
+            bolts_list.append({
+                "bolt_name": bolt_data["bolt_name"],
+                "bolt_type": bolt_data["bolt_type"],
+                "size": bolt_data["size"],
+                "length": bolt_data["length"],
+                "standard": bolt_data["standard"] or "N/A",
+                "location": bolt_data["location"],
+                "quantity": bolt_data["quantity"],
+                "assembly_mark": display_assembly,
+                "ids": bolt_data["ids"]
+            })
+        
+        # Convert fasteners dict to list
+        fasteners_list = []
+        for fastener_data in fasteners_dict.values():
+            # Get unique assemblies (excluding GUIDs)
+            assemblies = fastener_data["assemblies"]
+            non_guid_assemblies = [a for a in assemblies if not (a.startswith('ID') and len(a) > 30)]
+            
+            if non_guid_assemblies:
+                # Show actual assembly names
+                display_assembly = ", ".join(sorted(non_guid_assemblies))
+            else:
+                # All assemblies are GUIDs
+                display_assembly = "Various"
+            
+            fasteners_list.append({
+                "anchor_name": fastener_data["anchor_name"],
+                "assembly_mark": display_assembly,
+                "diameter": fastener_data["diameter"],
+                "length": fastener_data["length"],
+                "material": fastener_data["material"],
+                "weight": round(fastener_data["weight"], 2),
+                "quantity": fastener_data["quantity"],
+                "total_weight": round(fastener_data["total_weight"], 2),
+                "ids": fastener_data["ids"]
             })
         
         # Sort lists
         profiles_list.sort(key=lambda x: (x["profile_name"], x["part_name"]))
         plates_list.sort(key=lambda x: (x["thickness"], x["part_name"]))
         assemblies_list.sort(key=lambda x: x["assembly_mark"])
+        bolts_list.sort(key=lambda x: (x["bolt_name"], x["size"] or 0, x["length"] or 0))
+        fasteners_list.sort(key=lambda x: (x["anchor_name"], x["diameter"] or 0, x["length"] or 0))
         
         return JSONResponse({
             "profiles": profiles_list,
             "plates": plates_list,
-            "assemblies": assemblies_list
+            "assemblies": assemblies_list,
+            "bolts": bolts_list,
+            "fasteners": fasteners_list
         })
         
     except Exception as e:

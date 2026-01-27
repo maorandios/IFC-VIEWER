@@ -119,6 +119,69 @@ export default function ProfilesTab({ filename, report }: ProfilesTabProps) {
           </p>
         </div>
 
+        {/* Summary Cards */}
+        {profiles.length > 0 && (
+          <div className="grid grid-cols-3 gap-6 mb-6">
+            {/* Total Weight Card */}
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-100 text-sm font-medium uppercase tracking-wider">Total Weight</p>
+                  <p className="text-3xl font-bold mt-2">
+                    {profiles.reduce((sum, p) => sum + (p.total_weight || 0), 0).toFixed(2)}
+                  </p>
+                  <p className="text-blue-100 text-base mt-1">kg</p>
+                </div>
+                <div className="bg-blue-400 bg-opacity-30 rounded-full p-4">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Percentage Card */}
+            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-indigo-100 text-sm font-medium uppercase tracking-wider">% of Total Project</p>
+                  <p className="text-3xl font-bold mt-2">
+                    {report && report.total_tonnage 
+                      ? ((profiles.reduce((sum, p) => sum + (p.total_weight || 0), 0) / (report.total_tonnage * 1000)) * 100).toFixed(1)
+                      : '0.0'
+                    }%
+                  </p>
+                  <p className="text-indigo-100 text-base mt-1">of project weight</p>
+                </div>
+                <div className="bg-indigo-400 bg-opacity-30 rounded-full p-4">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Quantity Card */}
+            <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-cyan-100 text-sm font-medium uppercase tracking-wider">Total Quantity</p>
+                  <p className="text-3xl font-bold mt-2">
+                    {profiles.reduce((sum, p) => sum + (p.quantity || 1), 0)}
+                  </p>
+                  <p className="text-cyan-100 text-base mt-1">pieces</p>
+                </div>
+                <div className="bg-cyan-400 bg-opacity-30 rounded-full p-4">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filter and Search Section */}
         {profiles.length > 0 && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">

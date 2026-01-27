@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { SteelReport } from '../types'
 import { PreviewModal } from './PreviewModal'
 
@@ -12,10 +12,14 @@ interface AssemblyDetail {
   assembly_id: number | null
   main_profile: string
   length: number
+  weight: number
+  quantity: number
   total_weight: number
   member_count: number
   plate_count: number
   parts: Array<any>
+  profiles: Array<any>
+  plates: Array<any>
   ids: number[]
 }
 
@@ -214,37 +218,54 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
           </div>
         )}
 
-        {/* Assemblies List */}
-        <div className="space-y-2">
+        {/* Assemblies Table */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-100 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Assembly Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Main Profile</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Length (mm)</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
           {filteredAssemblies.length === 0 ? (
-            <div className="bg-white rounded-lg shadow-md p-12 text-center">
-              <p className="text-gray-500 text-lg">
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                 {assemblies.length === 0 ? 'No assemblies found' : 'No assemblies match the current filters'}
-              </p>
-            </div>
-          ) : (
-            filteredAssemblies.map((assembly) => (
-              <div key={assembly.assembly_mark} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAssemblies.map((assembly, index) => (
+                    <Fragment key={assembly.assembly_mark}>
+                      <tr className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 text-sm font-bold text-gray-900">{assembly.assembly_mark}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-blue-600">{assembly.main_profile}</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          {assembly.length ? assembly.length.toFixed(1) : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          {assembly.weight ? assembly.weight.toFixed(2) : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-blue-600">
+                          {assembly.quantity || 1}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
+                          {assembly.total_weight ? assembly.total_weight.toFixed(2) : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
                   <button
                     onClick={() => toggleAssembly(assembly.assembly_mark)}
-                    className="flex-1 hover:bg-gray-100 transition-colors flex items-center justify-between"
-                  >
-                    <div className="flex items-center space-x-4 text-left">
-                      <span className="text-lg font-bold text-gray-900">{assembly.assembly_mark}</span>
-                      <span className="text-sm text-gray-600">{assembly.main_profile}</span>
-                      <span className="text-sm text-gray-500">
-                        {assembly.length ? `${assembly.length.toFixed(0)}mm` : 'N/A'}
-                      </span>
-                      <span className="text-sm font-medium text-blue-600">
-                        {assembly.total_weight.toFixed(2)} kg
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        ({assembly.member_count} members, {assembly.plate_count} plates)
-                      </span>
-                    </div>
-                    <svg
-                      className={`w-5 h-5 text-gray-500 transition-transform ${
+                              className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors flex items-center gap-1"
+                            >
+                              <svg
+                                className={`w-4 h-4 transition-transform ${
                         expandedAssemblies.has(assembly.assembly_mark) ? 'transform rotate-180' : ''
                       }`}
                       fill="none"
@@ -253,75 +274,158 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
+                              {expandedAssemblies.has(assembly.assembly_mark) ? 'Hide' : 'Expand'}
                   </button>
                   <button
                     onClick={() => openPreview(assembly.ids, `Assembly: ${assembly.assembly_mark}`)}
-                    className="ml-4 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                   >
                     View 3D
                   </button>
                 </div>
-                
+                        </td>
+                      </tr>
                 {expandedAssemblies.has(assembly.assembly_mark) && (
-                  <div className="p-4 bg-white">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part Name</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Profile Name</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Thickness</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Length (mm)</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Weight (kg)</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                        <tr key={`${assembly.assembly_mark}-expanded`}>
+                          <td colSpan={7} className="px-4 py-4 bg-gray-50">
+                            <div className="space-y-6">
+                              {/* Profiles Section */}
+                              {assembly.profiles && assembly.profiles.length > 0 && (
+                                <div>
+                                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded text-sm">Profiles</span>
+                                    <span className="text-sm text-gray-600">({assembly.profiles.length} items)</span>
+                                  </h3>
+                                  <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <table className="w-full">
+                                      <thead className="bg-blue-50 border-b border-blue-200">
+                                        <tr>
+                                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Part Name</th>
+                                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Profile Name</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Length (mm)</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Preview</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {(() => {
-                          // Group duplicate parts
-                          const partsMap = new Map<string, { part: any; quantity: number }>();
-                          
-                          assembly.parts.forEach(part => {
-                            const key = `${part.part_name}_${part.part_type}_${part.profile_name}_${part.thickness}_${part.length}_${part.weight}`;
-                            
-                            if (partsMap.has(key)) {
-                              partsMap.get(key)!.quantity += 1;
-                            } else {
-                              partsMap.set(key, { part, quantity: 1 });
-                            }
-                          });
-                          
-                          return Array.from(partsMap.values()).map(({ part, quantity }, index) => (
-                            <tr key={`${part.id}_${index}`} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-sm text-gray-900">{part.part_name}</td>
-                              <td className="px-3 py-2 text-sm text-gray-600">
-                                {part.part_type === 'profile' ? 'Profile' : 'Plate'}
+                                      <tbody className="divide-y divide-gray-200">
+                                        {assembly.profiles.map((profile: any, pIndex: number) => (
+                                          <tr key={`profile-${pIndex}`} className={pIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="px-4 py-2 text-sm text-gray-900">{profile.part_name}</td>
+                                            <td className="px-4 py-2 text-sm font-medium text-blue-600">{profile.profile_name}</td>
+                                            <td className="px-4 py-2 text-sm text-right text-gray-900">
+                                              {profile.length ? profile.length.toFixed(1) : 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-right text-gray-900">
+                                              {profile.weight ? profile.weight.toFixed(2) : 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-right font-medium text-blue-600">
+                                              {profile.quantity || 1}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-right font-bold text-gray-900">
+                                              {profile.total_weight ? profile.total_weight.toFixed(2) : 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-center">
+                                              <button
+                                                onClick={() => openPreview(profile.ids, `Profile: ${profile.part_name}`)}
+                                                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                              >
+                                                View 3D
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Plates Section */}
+                              {assembly.plates && assembly.plates.length > 0 && (
+                                <div>
+                                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                    <span className="bg-green-600 text-white px-2 py-1 rounded text-sm">Plates</span>
+                                    <span className="text-sm text-gray-600">({assembly.plates.length} items)</span>
+                                  </h3>
+                                  <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <table className="w-full">
+                                      <thead className="bg-green-50 border-b border-green-200">
+                                        <tr>
+                                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Plate Name</th>
+                                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Thickness</th>
+                                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Profile Name</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Width (mm)</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Length (mm)</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
+                                          <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Preview</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-200">
+                                        {assembly.plates.map((plate: any, pIndex: number) => (
+                                          <tr key={`plate-${pIndex}`} className={pIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="px-4 py-2 text-sm text-gray-900">{plate.part_name}</td>
+                                            <td className="px-4 py-2 text-sm font-medium text-blue-600">{plate.thickness}</td>
+                                            <td className="px-4 py-2 text-sm font-medium text-green-600">{plate.profile_name}</td>
+                                            <td className="px-4 py-2 text-sm text-right text-gray-900">
+                                              {plate.width ? plate.width.toFixed(1) : 'N/A'}
                               </td>
-                              <td className="px-3 py-2 text-sm font-medium text-green-600">
-                                {part.profile_name || 'N/A'}
+                                            <td className="px-4 py-2 text-sm text-right text-gray-900">
+                                              {plate.length ? plate.length.toFixed(1) : 'N/A'}
                               </td>
-                              <td className="px-3 py-2 text-sm text-blue-600">
-                                {part.part_type === 'plate' ? part.thickness : '-'}
+                                            <td className="px-4 py-2 text-sm text-right text-gray-900">
+                                              {plate.weight ? plate.weight.toFixed(2) : 'N/A'}
                               </td>
-                              <td className="px-3 py-2 text-sm text-right text-gray-900">
-                                {part.length ? part.length.toFixed(1) : 'N/A'}
+                                            <td className="px-4 py-2 text-sm text-right font-medium text-blue-600">
+                                              {plate.quantity || 1}
                               </td>
-                              <td className="px-3 py-2 text-sm text-right font-medium text-gray-900">
-                                {part.weight.toFixed(2)}
+                                            <td className="px-4 py-2 text-sm text-right font-bold text-gray-900">
+                                              {plate.total_weight ? plate.total_weight.toFixed(2) : 'N/A'}
                               </td>
-                              <td className="px-3 py-2 text-sm text-right font-bold text-blue-600">
-                                {quantity}
+                                            <td className="px-4 py-2 text-center">
+                                              <button
+                                                onClick={() => openPreview(plate.ids, `Plate: ${plate.part_name}`)}
+                                                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                              >
+                                                View 3D
+                                              </button>
                               </td>
                             </tr>
-                          ));
-                        })()}
+                                        ))}
                       </tbody>
                     </table>
+                                  </div>
                   </div>
                 )}
               </div>
-            ))
-          )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))
+                )}
+              </tbody>
+              {filteredAssemblies.length > 0 && (
+                <tfoot className="bg-gray-100">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                      Total ({filteredAssemblies.reduce((sum, a) => sum + (a.quantity || 1), 0)} assemblies):
+                    </td>
+                    <td className="px-4 py-3 text-sm font-bold text-blue-600 text-right">
+                      {filteredAssemblies.length} groups
+                    </td>
+                    <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                      {filteredAssemblies.reduce((sum, a) => sum + (a.total_weight || 0), 0).toFixed(2)} kg
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 export interface SteelReport {
   total_tonnage: number
+  total_weight?: number  // Total weight in kg
   fastener_tonnage?: number
   fastener_count?: number  // Total count of fasteners/bolts
   category_tonnage?: Record<string, number>  // Tonnage by category (Beam, Column, Plate, Other)
