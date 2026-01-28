@@ -542,42 +542,64 @@ def get_plate_thickness(element) -> str:
     try:
         psets = ifcopenshell.util.element.get_psets(element)
         
-        # Check all property sets for thickness-related keys
+        # First priority: explicit thickness properties
         for pset_name, props in psets.items():
-            # Check common thickness property names
-            # NOTE: In Tekla, plate thickness is often stored as "Width" in property sets
             for key in ["Thickness", "thickness", "ThicknessProfile", "thickness_profile", 
                        "Profile", "profile", "PlateThickness", "plate_thickness",
-                       "NominalThickness", "nominal_thickness", "ThicknessValue",
-                       "Width", "width"]:  # Added Width - Tekla stores thickness as Width
+                       "NominalThickness", "nominal_thickness", "ThicknessValue"]:
                 if key in props:
                     value = props[key]
                     if value is not None:
                         value_str = str(value).strip()
                         if value_str and value_str.upper() not in ['NONE', 'NULL', 'N/A', '']:
-                            # If it's a number, add "mm" suffix
                             try:
                                 thickness_num = float(value_str)
-                                return f"{int(thickness_num)}mm"
+                                if thickness_num > 0 and thickness_num < 1000:
+                                    return f"{int(thickness_num)}mm"
                             except ValueError:
-                                # If it's already a string like "12mm" or "PL10", return as-is
                                 return value_str
         
-        # Check Tekla Quantity property set specifically (common in Tekla exports)
+        # Try to get from geometry bounding box (smallest dimension is thickness)
+        if HAS_GEOM:
+            try:
+                settings = ifcopenshell.geom.settings()
+                shape = ifcopenshell.geom.create_shape(settings, element)
+                if shape:
+                    geom = shape.geometry
+                    verts = geom.verts
+                    if len(verts) >= 3:
+                        import numpy as np
+                        vertices = np.array(verts).reshape(-1, 3)
+                        bbox_min = vertices.min(axis=0)
+                        bbox_max = vertices.max(axis=0)
+                        dims = bbox_max - bbox_min
+                        
+                        # Convert to mm if in meters
+                        if np.max(dims) < 100:
+                            dims = dims * 1000
+                        
+                        # Smallest dimension is thickness
+                        thickness = np.min(dims)
+                        if thickness > 0 and thickness < 1000:
+                            return f"{int(thickness)}mm"
+            except:
+                pass
+        
+        # Last resort: Tekla Quantity - pick smallest dimension
         if "Tekla Quantity" in psets:
             tekla_qty = psets["Tekla Quantity"]
-            # Tekla Quantity might have thickness in Height or Width for plates
-            # For plates, Width is often the thickness dimension
-            for key in ["Width", "Thickness", "Height"]:  # Width first - most common in Tekla
-                if key in tekla_qty:
-                    value = tekla_qty[key]
-                    if value is not None:
-                        try:
-                            thickness_num = float(value)
-                            # For plates, thickness is usually the smallest dimension (often Width)
-                            return f"{int(thickness_num)}mm"
-                        except (ValueError, TypeError):
-                            pass
+            dimensions = []
+            for key in ["Width", "Height", "Length"]:
+                if key in tekla_qty and tekla_qty[key] is not None:
+                    try:
+                        dimensions.append(float(tekla_qty[key]))
+                    except:
+                        pass
+            
+            if len(dimensions) >= 2:
+                thickness = min(dimensions)
+                if thickness > 0 and thickness < 1000:
+                    return f"{int(thickness)}mm"
     except Exception as e:
         print(f"[PLATE_THICKNESS] Error getting psets for element {element.id() if hasattr(element, 'id') else 'unknown'}: {e}")
         pass
