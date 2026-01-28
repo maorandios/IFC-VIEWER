@@ -6503,6 +6503,34 @@ async def generate_plate_nesting(filename: str, request: Request):
         overall_utilization = (total_used_area / total_stock_area * 100) if total_stock_area > 0 else 0
         waste_area = total_stock_area - total_used_area
         
+        # Calculate tonnage (weight) for plates
+        # Steel density: 7850 kg/m³ = 0.00000785 kg/mm³
+        STEEL_DENSITY = 0.00000785  # kg/mm³
+        
+        # Calculate weight for nested plates
+        total_plate_weight = 0.0
+        for result in nesting_results:
+            for plate in result['plates']:
+                # Volume = width (mm) * height (mm) * thickness (mm)
+                thickness_value = float(plate['thickness'].replace('mm', '').replace('t', '').strip())
+                volume_mm3 = plate['width'] * plate['height'] * thickness_value
+                weight_kg = volume_mm3 * STEEL_DENSITY
+                total_plate_weight += weight_kg
+        
+        # Calculate waste weight
+        # waste weight = waste_area_mm2 * average_thickness * density
+        # Get average thickness from nested plates
+        thickness_values = []
+        for result in nesting_results:
+            for plate in result['plates']:
+                thickness_str = plate['thickness'].replace('mm', '').replace('t', '').strip()
+                try:
+                    thickness_values.append(float(thickness_str))
+                except:
+                    pass
+        avg_thickness = sum(thickness_values) / len(thickness_values) if thickness_values else 10.0  # Default 10mm
+        waste_weight = waste_area * avg_thickness * STEEL_DENSITY  # waste_area is in mm²
+        
         statistics = {
             "total_plates": total_plates,
             "nested_plates": nested_plates,
@@ -6512,7 +6540,9 @@ async def generate_plate_nesting(filename: str, request: Request):
             "total_used_area_m2": round(total_used_area / 1_000_000, 2),
             "waste_area_m2": round(waste_area / 1_000_000, 2),
             "overall_utilization": round(overall_utilization, 2),
-            "waste_percentage": round(100 - overall_utilization, 2)
+            "waste_percentage": round(100 - overall_utilization, 2),
+            "plates_tonnage": round(total_plate_weight / 1000, 3),  # Convert kg to tonnes
+            "waste_tonnage": round(waste_weight / 1000, 3)  # Convert kg to tonnes
         }
         
         return JSONResponse({

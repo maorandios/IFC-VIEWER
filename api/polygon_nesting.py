@@ -213,6 +213,8 @@ def calculate_nesting_statistics(
             'waste_area_m2': 0.0,
             'overall_utilization': 0.0,
             'waste_percentage': 100.0,
+            'plates_tonnage': 0.0,
+            'waste_tonnage': 0.0,
             'geometry_based': True
         }
     
@@ -228,6 +230,26 @@ def calculate_nesting_statistics(
     overall_utilization = (total_used_area / total_stock_area * 100) if total_stock_area > 0 else 0.0
     waste_area = total_stock_area - total_used_area
     
+    # Calculate tonnage (weight) for plates
+    # Steel density: 7850 kg/m³ = 0.00000785 kg/mm³
+    STEEL_DENSITY = 0.00000785  # kg/mm³
+    
+    # Calculate weight for nested plates
+    total_plate_weight = 0.0
+    thickness_values = []
+    for result in results:
+        for plate_entry in result.placed_plates:
+            plate = plate_entry['plate']
+            # Area is already in mm², thickness is in mm
+            volume_mm3 = plate.area * plate.thickness
+            weight_kg = volume_mm3 * STEEL_DENSITY
+            total_plate_weight += weight_kg
+            thickness_values.append(plate.thickness)
+    
+    # Calculate waste weight
+    avg_thickness = sum(thickness_values) / len(thickness_values) if thickness_values else 10.0
+    waste_weight = waste_area * avg_thickness * STEEL_DENSITY  # waste_area is in mm²
+    
     return {
         'total_plates': total_plates,
         'nested_plates': nested_plates,
@@ -238,6 +260,8 @@ def calculate_nesting_statistics(
         'waste_area_m2': round(waste_area / 1_000_000, 2),
         'overall_utilization': round(overall_utilization, 2),
         'waste_percentage': round(100 - overall_utilization, 2),
+        'plates_tonnage': round(total_plate_weight / 1000, 3),  # Convert kg to tonnes
+        'waste_tonnage': round(waste_weight / 1000, 3),  # Convert kg to tonnes
         'geometry_based': True
     }
 

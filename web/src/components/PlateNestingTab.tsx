@@ -768,50 +768,101 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
         {/* Step 3: Results */}
         {currentStep === 'results' && nestingResults && nestingResults.success && (
           <div className="max-w-7xl mx-auto">
-            {/* Statistics Summary */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold text-gray-900">Nesting Results</h3>
+            {/* Section 1: Statistics Cards */}
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg p-8 mb-6 border border-gray-200">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">Nesting Results Overview</h3>
+                  <p className="text-sm text-gray-600 mt-1">Optimized cutting plan statistics and material analysis</p>
+                </div>
                 {(nestingResults.statistics as any).geometry_based && (
-                  <div className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
+                  <div className="px-4 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-900 rounded-lg text-sm font-semibold shadow-sm border border-purple-300">
                     ✨ Geometry-Based Nesting
                   </div>
                 )}
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-600 font-medium">Total Plates</p>
-                  <p className="text-2xl font-bold text-blue-900">{nestingResults.statistics.total_plates}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Total Plates */}
+                <div className="bg-white rounded-xl p-5 shadow-md border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Plates</p>
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <span className="text-xl">📦</span>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">{nestingResults.statistics.total_plates}</p>
+                  <p className="text-xs text-gray-500 mt-1">pieces to nest</p>
                 </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-green-600 font-medium">Stock Sheets</p>
-                  <p className="text-2xl font-bold text-green-900">{nestingResults.statistics.stock_sheets_used}</p>
+
+                {/* Total Area */}
+                <div className="bg-white rounded-xl p-5 shadow-md border-l-4 border-indigo-500 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Area</p>
+                    <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                      <span className="text-xl">📐</span>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">{nestingResults.statistics.total_stock_area_m2}</p>
+                  <p className="text-xs text-gray-500 mt-1">m² stock used</p>
                 </div>
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <p className="text-sm text-purple-600 font-medium">Utilization</p>
-                  <p className="text-2xl font-bold text-purple-900">{nestingResults.statistics.overall_utilization}%</p>
+
+                {/* Plates Tonnage */}
+                <div className="bg-white rounded-xl p-5 shadow-md border-l-4 border-green-500 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Plates Weight</p>
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <span className="text-xl">⚖️</span>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {((nestingResults.statistics as any).plates_tonnage || 0).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">tonnes of steel</p>
                 </div>
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <p className="text-sm text-orange-600 font-medium">Waste</p>
-                  <p className="text-2xl font-bold text-orange-900">{nestingResults.statistics.waste_percentage}%</p>
+
+                {/* Waste Tonnage */}
+                <div className="bg-white rounded-xl p-5 shadow-md border-l-4 border-orange-500 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Waste Weight</p>
+                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <span className="text-xl">🗑️</span>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {((nestingResults.statistics as any).waste_tonnage || 0).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">tonnes wasted</p>
+                </div>
+
+                {/* Waste Area */}
+                <div className="bg-white rounded-xl p-5 shadow-md border-l-4 border-red-500 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Waste Area</p>
+                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                      <span className="text-xl">❌</span>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">{nestingResults.statistics.waste_area_m2}</p>
+                  <p className="text-xs text-gray-500 mt-1">m² unused</p>
                 </div>
               </div>
 
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Total Area:</span>
-                    <span className="ml-2 font-semibold">{nestingResults.statistics.total_stock_area_m2} m²</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Used Area:</span>
-                    <span className="ml-2 font-semibold">{nestingResults.statistics.total_used_area_m2} m²</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Waste Area:</span>
-                    <span className="ml-2 font-semibold">{nestingResults.statistics.waste_area_m2} m²</span>
-                  </div>
+              {/* Efficiency Bar */}
+              <div className="mt-6 p-4 bg-white rounded-xl shadow-md">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-gray-700">Material Utilization</span>
+                  <span className="text-2xl font-bold text-purple-600">{nestingResults.statistics.overall_utilization}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-r from-green-400 via-green-500 to-green-600 h-4 rounded-full transition-all duration-500 shadow-inner"
+                    style={{ width: `${nestingResults.statistics.overall_utilization}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-600">
+                  <span>Used: {nestingResults.statistics.total_used_area_m2} m²</span>
+                  <span>Waste: {nestingResults.statistics.waste_percentage}%</span>
                 </div>
               </div>
             </div>
