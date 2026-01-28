@@ -96,6 +96,11 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
   const [selectedPlanIndex, setSelectedPlanIndex] = useState(0)
   const [useGeometry, setUseGeometry] = useState(true)
   const [useActualGeometry, setUseActualGeometry] = useState(true)
+  
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [previewPlate, setPreviewPlate] = useState<PlateDetail | null>(null)
+  const [plateGeometry, setPlateGeometry] = useState<any>(null)
+  const [loadingGeometry, setLoadingGeometry] = useState(false)
 
   useEffect(() => {
     if (filename && report) {
@@ -111,15 +116,42 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
         const data = await response.json()
         const platesData = data.plates || []
         setPlates(platesData)
-        // Auto-select all plates by default
-        const allPlateIds = new Set(platesData.map((_p: PlateDetail, idx: number) => `plate-${idx}`))
-        setSelectedPlates(allPlateIds)
       }
     } catch (error) {
       console.error('Error fetching plates:', error)
     } finally {
       setLoadingPlates(false)
     }
+  }
+
+  const fetchPlateGeometry = async (plate: PlateDetail) => {
+    if (!plate.ids || plate.ids.length === 0) return null
+    setLoadingGeometry(true)
+    try {
+      const elementId = plate.ids[0]
+      const response = await fetch(`/api/plate-geometry/${encodeURIComponent(filename)}/${elementId}`)
+      if (response.ok) return await response.json()
+      return null
+    } catch (error) {
+      console.error('Error fetching plate geometry:', error)
+      return null
+    } finally {
+      setLoadingGeometry(false)
+    }
+  }
+
+  const handleOpenPreview = async (plate: PlateDetail) => {
+    setPreviewPlate(plate)
+    setShowPreviewModal(true)
+    setPlateGeometry(null)
+    const geometry = await fetchPlateGeometry(plate)
+    setPlateGeometry(geometry)
+  }
+
+  const handleClosePreview = () => {
+    setShowPreviewModal(false)
+    setPreviewPlate(null)
+    setPlateGeometry(null)
   }
 
   const togglePlateSelection = (plateId: string) => {
@@ -518,12 +550,12 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                         />
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Plate Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Assembly</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Thickness</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Width (mm)</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Length (mm)</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Preview</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -554,7 +586,6 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                               />
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900">{plate.part_name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{plate.assembly_mark}</td>
                             <td className="px-4 py-3 text-sm font-medium text-blue-600">{plate.thickness}</td>
                             <td className="px-4 py-3 text-sm text-right text-gray-900">
                               {plate.width ? plate.width.toFixed(1) : 'N/A'}
@@ -567,6 +598,9 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                             </td>
                             <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
                               {plate.total_weight.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button onClick={(e) => {e.stopPropagation(); handleOpenPreview(plate)}} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100">👁️ View</button>
                             </td>
                           </tr>
                         )
@@ -1005,6 +1039,29 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
           </div>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {showPreviewModal && previewPlate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={handleClosePreview}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center rounded-t-xl">
+              <div><h3 className="text-xl font-bold text-gray-900">{previewPlate.part_name}</h3><p className="text-sm text-gray-500 mt-1">Plate Geometry Preview</p></div>
+              <button onClick={handleClosePreview} className="text-gray-400 hover:text-gray-600 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            <div className="p-6 space-y-6">
+              {loadingGeometry && !plateGeometry && (<div className="flex flex-col items-center justify-center py-12 space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div><p className="text-gray-600">Loading geometry...</p></div>)}
+              {!loadingGeometry && plateGeometry && plateGeometry.has_geometry && plateGeometry.svg_path && (<div className="space-y-4"><div className="flex justify-center"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">✓ Actual Geometry {plateGeometry.num_holes > 0 ? `with ${plateGeometry.num_holes} hole(s)` : ''}</span></div><div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center"><svg width="100%" height="400" viewBox={`${plateGeometry.bounding_box[0] - 50} ${plateGeometry.bounding_box[1] - 50} ${plateGeometry.bounding_box[2] - plateGeometry.bounding_box[0] + 100} ${plateGeometry.bounding_box[3] - plateGeometry.bounding_box[1] + 100}`} className="max-w-full"><path d={plateGeometry.svg_path} fill="#3b82f6" fillOpacity="0.2" stroke="#3b82f6" strokeWidth="2" fillRule="evenodd" /><g><line x1={plateGeometry.bounding_box[0]} y1={plateGeometry.bounding_box[3] + 30} x2={plateGeometry.bounding_box[2]} y2={plateGeometry.bounding_box[3] + 30} stroke="#374151" strokeWidth="1" markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)" /><text x={(plateGeometry.bounding_box[0] + plateGeometry.bounding_box[2]) / 2} y={plateGeometry.bounding_box[3] + 45} textAnchor="middle" fill="#374151" fontSize="14" fontWeight="bold">{plateGeometry.width.toFixed(1)} mm</text></g><g><line x1={plateGeometry.bounding_box[2] + 30} y1={plateGeometry.bounding_box[1]} x2={plateGeometry.bounding_box[2] + 30} y2={plateGeometry.bounding_box[3]} stroke="#374151" strokeWidth="1" markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)" /><text x={plateGeometry.bounding_box[2] + 45} y={(plateGeometry.bounding_box[1] + plateGeometry.bounding_box[3]) / 2} textAnchor="middle" fill="#374151" fontSize="14" fontWeight="bold" transform={`rotate(90, ${plateGeometry.bounding_box[2] + 45}, ${(plateGeometry.bounding_box[1] + plateGeometry.bounding_box[3]) / 2})`}>{plateGeometry.length.toFixed(1)} mm</text></g><defs><marker id="arrowStart" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><polygon points="10,5 0,0 0,10" fill="#374151" /></marker><marker id="arrowEnd" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><polygon points="0,5 10,0 10,10" fill="#374151" /></marker></defs></svg></div></div>)}
+              {!loadingGeometry && (!plateGeometry || !plateGeometry.has_geometry || !plateGeometry.svg_path) && previewPlate.width && previewPlate.length && (<div className="space-y-4"><div className="flex justify-center"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">⚠️ Bounding Box (Geometry not available)</span></div><div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center"><svg width="100%" height="400" viewBox={`-50 -50 ${previewPlate.width + 100} ${previewPlate.length + 100}`} className="max-w-full"><rect x="0" y="0" width={previewPlate.width} height={previewPlate.length} fill="#3b82f6" fillOpacity="0.2" stroke="#3b82f6" strokeWidth="2" /></svg></div></div>)}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Thickness</p><p className="text-lg font-bold text-gray-900">{previewPlate.thickness}</p></div>
+                <div className="bg-green-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Quantity</p><p className="text-lg font-bold text-gray-900">{previewPlate.quantity}</p></div>
+                <div className="bg-purple-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Weight per piece</p><p className="text-lg font-bold text-gray-900">{(previewPlate.total_weight / previewPlate.quantity).toFixed(2)} kg</p></div>
+                <div className="bg-orange-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Total Weight</p><p className="text-lg font-bold text-gray-900">{previewPlate.total_weight.toFixed(2)} kg</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
