@@ -970,45 +970,6 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
               </div>
             </div>
 
-            {/* Bill of Materials */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Bill of Materials (BOM)</h3>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b-2 border-gray-300">
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Dimensions (mm)</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Thickness</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Quantity</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Area (m²)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {generateBOM().map((item, index) => (
-                      <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900">{item.dimensions}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{item.thickness}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">{item.quantity}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700 text-right">{item.area_m2.toFixed(3)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td colSpan={2} className="px-4 py-3 text-sm text-gray-900">Total</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                        {generateBOM().reduce((sum, item) => sum + item.quantity, 0)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                        {generateBOM().reduce((sum, item) => sum + item.area_m2, 0).toFixed(3)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
             {/* Cutting Plans Visualization */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Cutting Plans</h3>
