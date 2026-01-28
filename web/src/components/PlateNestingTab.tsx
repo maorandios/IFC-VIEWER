@@ -352,6 +352,64 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
     })
   }
 
+  const generateStockPurchaseSummary = () => {
+    if (!nestingResults || !nestingResults.cutting_plans) return []
+    
+    // Steel density: 7850 kg/m³ = 0.00000785 kg/mm³
+    const STEEL_DENSITY = 0.00000785
+    
+    // Group by stock size and thickness
+    const stockMap = new Map<string, {
+      plateSize: string
+      thickness: string
+      quantity: number
+      totalArea: number
+      totalTonnage: number
+      width: number
+      length: number
+    }>()
+    
+    nestingResults.cutting_plans.forEach(plan => {
+      // Get thickness from plates in this plan (use first plate's thickness)
+      const thickness = plan.plates.length > 0 ? plan.plates[0].thickness : 'unknown'
+      const key = `${plan.stock_width}x${plan.stock_length}x${thickness}`
+      
+      const stockArea = plan.stock_width * plan.stock_length // mm²
+      const area_m2 = stockArea / 1_000_000
+      
+      // Calculate tonnage for this stock sheet
+      // Parse thickness value
+      const thicknessStr = thickness.toString().replace('mm', '').replace('t', '').replace('T', '').trim()
+      const thicknessValue = parseFloat(thicknessStr) || 10
+      const volume = stockArea * thicknessValue // mm³
+      const weight_kg = volume * STEEL_DENSITY
+      const tonnage = weight_kg / 1000
+      
+      if (stockMap.has(key)) {
+        const existing = stockMap.get(key)!
+        existing.quantity += 1
+        existing.totalArea += area_m2
+        existing.totalTonnage += tonnage
+      } else {
+        stockMap.set(key, {
+          plateSize: `${plan.stock_width} × ${plan.stock_length}`,
+          thickness: thickness,
+          quantity: 1,
+          totalArea: area_m2,
+          totalTonnage: tonnage,
+          width: plan.stock_width,
+          length: plan.stock_length
+        })
+      }
+    })
+    
+    return Array.from(stockMap.values()).sort((a, b) => {
+      // Sort by thickness first, then by size
+      if (a.thickness !== b.thickness) return a.thickness.localeCompare(b.thickness)
+      return (b.width * b.length) - (a.width * a.length)
+    })
+  }
+
   const handleExportPDF = async () => {
     if (!nestingResults || !filename) return
 
@@ -864,6 +922,51 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                   <span>Used: {nestingResults.statistics.total_used_area_m2} m²</span>
                   <span>Waste: {nestingResults.statistics.waste_percentage}%</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Section 2: Stock Purchase Summary */}
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Stock Plates to Purchase</h3>
+              <p className="text-sm text-gray-600 mb-4">Summary of stock plate sheets needed for this nesting plan</p>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-100 border-b-2 border-gray-300">
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Plate Size (mm)</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Thickness</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Quantity</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total m²</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Tonnage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {generateStockPurchaseSummary().map((item, index) => (
+                      <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.plateSize}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{item.thickness}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">{item.quantity}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 text-right">{item.totalArea.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 text-right">{item.totalTonnage.toFixed(3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                      <td colSpan={2} className="px-4 py-3 text-sm text-gray-900">Total</td>
+                      <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                        {generateStockPurchaseSummary().reduce((sum, item) => sum + item.quantity, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                        {generateStockPurchaseSummary().reduce((sum, item) => sum + item.totalArea, 0).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                        {generateStockPurchaseSummary().reduce((sum, item) => sum + item.totalTonnage, 0).toFixed(3)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
 
