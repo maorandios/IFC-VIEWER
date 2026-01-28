@@ -1064,17 +1064,21 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 const height = bbox[3] - bbox[1]
                 const maxDim = Math.max(width, height)
                 
-                // Dimension offset from plate edge
-                const dimOffset = maxDim * 0.12
+                // Dimension offset from plate edge (in plate coordinates)
+                const dimOffset = maxDim * 0.15
                 
-                // Font size based on plate size
-                const fontSize = Math.max(14, Math.min(20, maxDim * 0.025))
+                // Font size (in pixels)
+                const fontSize = Math.max(14, Math.min(22, maxDim * 0.025))
                 
-                // Total space needed for dimensions (line + text + padding)
-                const dimSpace = dimOffset + fontSize * 2.5
+                // Text space in plate coordinates (fontSize in px, convert to plate units)
+                // Approximate: fontSize pixels ≈ fontSize * (maxDim / 500) in plate units
+                const textSpace = fontSize * (maxDim / 400)
                 
-                // ViewBox padding includes space for dimensions
-                const viewPadding = Math.max(dimSpace, maxDim * 0.05)
+                // Total space needed for dimensions
+                const dimSpace = dimOffset + textSpace * 1.5
+                
+                // ViewBox padding - ensure dimensions are always visible
+                const viewPadding = Math.max(dimSpace, maxDim * 0.2)
                 
                 return (
                   <div className="space-y-4">
@@ -1105,9 +1109,9 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                         <g>
                           <line 
                             x1={bbox[0]} 
-                            y1={bbox[3] + dimOffset} 
+                            y1={bbox[3] + dimOffset * 0.7} 
                             x2={bbox[2]} 
-                            y2={bbox[3] + dimOffset}
+                            y2={bbox[3] + dimOffset * 0.7}
                             stroke="#374151" 
                             strokeWidth={Math.max(1, width * 0.001)}
                             markerStart="url(#arrowStart)" 
@@ -1115,12 +1119,12 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                           />
                           <text 
                             x={(bbox[0] + bbox[2]) / 2} 
-                            y={bbox[3] + dimOffset + fontSize * 1.5}
+                            y={bbox[3] + dimOffset * 0.7 + textSpace}
                             textAnchor="middle"
                             fill="#1f2937"
                             fontSize={fontSize}
                             fontWeight="bold"
-                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 3 }}
+                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 4 }}
                           >
                             {plateGeometry.width.toFixed(1)} mm
                           </text>
@@ -1129,9 +1133,9 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                         {/* Length Dimension (right) */}
                         <g>
                           <line 
-                            x1={bbox[2] + dimOffset} 
+                            x1={bbox[2] + dimOffset * 0.7} 
                             y1={bbox[1]} 
-                            x2={bbox[2] + dimOffset} 
+                            x2={bbox[2] + dimOffset * 0.7} 
                             y2={bbox[3]}
                             stroke="#374151" 
                             strokeWidth={Math.max(1, height * 0.001)}
@@ -1139,14 +1143,14 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                             markerEnd="url(#arrowEnd)"
                           />
                           <text 
-                            x={bbox[2] + dimOffset + fontSize * 1.5} 
+                            x={bbox[2] + dimOffset * 0.7 + textSpace} 
                             y={(bbox[1] + bbox[3]) / 2}
                             textAnchor="middle"
                             fill="#1f2937"
                             fontSize={fontSize}
                             fontWeight="bold"
-                            transform={`rotate(90, ${bbox[2] + dimOffset + fontSize * 1.5}, ${(bbox[1] + bbox[3]) / 2})`}
-                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 3 }}
+                            transform={`rotate(90, ${bbox[2] + dimOffset * 0.7 + textSpace}, ${(bbox[1] + bbox[3]) / 2})`}
+                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 4 }}
                           >
                             {plateGeometry.length.toFixed(1)} mm
                           </text>
