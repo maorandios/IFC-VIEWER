@@ -902,7 +902,7 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                   </div>
 
                   {/* SVG Visualization */}
-                  <div className="bg-white rounded-lg p-4 overflow-auto">
+                  <div className="bg-white rounded-lg p-4">
                     {(() => {
                       const stockWidth = nestingResults.cutting_plans[selectedPlanIndex].stock_width;
                       const stockLength = nestingResults.cutting_plans[selectedPlanIndex].stock_length;
@@ -930,8 +930,8 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                           <svg
                             viewBox={`0 0 ${displayWidth} ${displayHeight}`}
                             className="w-full border-2 border-gray-400"
-                            style={{ height: '600px', maxWidth: '100%' }}
-                            preserveAspectRatio="xMidYMid meet"
+                            style={{ height: 'auto', maxHeight: '70vh', display: 'block' }}
+                            preserveAspectRatio="xMinYMin meet"
                           >
                             {/* Stock plate background */}
                             <rect
