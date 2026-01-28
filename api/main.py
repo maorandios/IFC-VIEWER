@@ -5695,6 +5695,22 @@ async def get_dashboard_details(filename: str):
             # Round total_weight
             group_data["total_weight"] = round(group_data["total_weight"], 2)
             
+            # Collect unique IDs - one of each unique part type (not duplicates within assembly)
+            seen_parts = {}  # key -> first ID
+            for part in group_data["parts"]:
+                if part["part_type"] == "profile":
+                    key = (part["part_name"], part["profile_name"], part["length"])
+                elif part["part_type"] == "plate":
+                    key = (part["part_name"], part.get("thickness"), part.get("width"), part.get("length"))
+                else:
+                    key = (part["part_name"], part.get("part_type"))
+                
+                # Store first ID for each unique part
+                if key not in seen_parts:
+                    seen_parts[key] = part["id"]
+            
+            unique_ids_list = list(seen_parts.values())
+            
             assemblies_list.append({
                 "assembly_mark": group_data["assembly_mark"],
                 "assembly_id": group_data["assembly_id"],
@@ -5708,7 +5724,8 @@ async def get_dashboard_details(filename: str):
                 "parts": group_data["parts"],
                 "profiles": list(profiles_in_assembly.values()),
                 "plates": list(plates_in_assembly.values()),
-                "ids": group_data["all_ids"]
+                "ids": unique_ids_list,  # Use unique part IDs only (one of each type)
+                "all_ids": group_data["all_ids"]  # Keep all_ids for reference if needed
             })
         
         # Convert bolts dict to list

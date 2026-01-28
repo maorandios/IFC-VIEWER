@@ -296,10 +296,21 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         visibleMeshes.forEach((mesh) => {
           if (mesh instanceof THREE.Mesh && mesh.geometry) {
             try {
+              // Get the mesh's material color and make edges darker
+              let edgeColor = new THREE.Color(0x000000); // Default to black
+              
+              if (mesh.material) {
+                const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+                if ('color' in material && material.color) {
+                  // Clone the material color and make it darker (multiply by 0.5)
+                  edgeColor = (material.color as THREE.Color).clone().multiplyScalar(0.5);
+                }
+              }
+              
               // Create edges geometry
               const edges = new THREE.EdgesGeometry(mesh.geometry, 15); // 15 degree threshold
               const lineMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x000000, // Black edges
+                color: edgeColor, // Darker version of mesh color
                 linewidth: 1,
                 transparent: false
               });
@@ -350,9 +361,9 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
           camera.lookAt(center);
           controls.target.copy(center);
           
-          // Set min/max distance for zoom controls
-          controls.minDistance = cameraDistance * 0.3;
-          controls.maxDistance = cameraDistance * 3;
+          // Remove ALL zoom limits - allow infinite zoom in/out
+          controls.minDistance = 0; // No minimum distance limit
+          controls.maxDistance = Infinity; // No maximum distance limit
           
           controls.update();
         }
