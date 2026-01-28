@@ -6243,97 +6243,24 @@ async def generate_plate_nesting(filename: str, request: Request):
         # Get request body with stock plates configuration
         body = await request.json()
         stock_plates = body.get('stock_plates', [])
+        selected_plates_data = body.get('selected_plates', [])
         
         if not stock_plates:
             raise HTTPException(status_code=400, detail="No stock plates provided")
         
-        # Get existing plate data from dashboard
-        file_path = IFC_DIR / filename
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+        if not selected_plates_data:
+            raise HTTPException(status_code=400, detail="No plates selected for nesting")
         
-        # Fetch plates data (reuse existing logic)
-        ifc_file = ifcopenshell.open(str(file_path))
-        plates_dict = {}
-        
-        # Extract plates (simplified version - get dimensions)
-        for element in ifc_file.by_type("IfcProduct"):
-            element_type = element.is_a()
-            
-            if element_type == "IfcPlate":
-                # Get dimensions
-                thickness = get_plate_thickness(element)
-                
-                # Get bounding box for width and length
-                try:
-                    psets = ifcopenshell.util.element.get_psets(element)
-                    width = None
-                    length = None
-                    
-                    # Try to get dimensions from property sets
-                    for pset_name, props in psets.items():
-                        if 'Width' in props and props['Width']:
-                            width = float(props['Width'])
-                        if 'Length' in props and props['Length']:
-                            length = float(props['Length'])
-                        elif 'Height' in props and props['Height']:
-                            # Sometimes length is stored as Height
-                            length = float(props['Height'])
-                    
-                    # If no dimensions found, try to calculate from geometry
-                    if not width or not length:
-                        if HAS_GEOM:
-                            try:
-                                settings = ifcopenshell.geom.settings()
-                                shape = ifcopenshell.geom.create_shape(settings, element)
-                                if shape:
-                                    geom = shape.geometry
-                                    # Get bounding box
-                                    verts = geom.verts
-                                    if len(verts) >= 3:
-                                        import numpy as np
-                                        vertices = np.array(verts).reshape(-1, 3)
-                                        bbox_min = vertices.min(axis=0)
-                                        bbox_max = vertices.max(axis=0)
-                                        dims = bbox_max - bbox_min
-                                        # Assume largest two dimensions are width and length
-                                        sorted_dims = sorted(dims, reverse=True)
-                                        width = sorted_dims[0] if not width else width
-                                        length = sorted_dims[1] if not length else length
-                            except:
-                                pass
-                    
-                    if width and length and width > 0 and length > 0:
-                        element_name = getattr(element, 'Name', None) or f'Plate_{element.id()}'
-                        plate_key = (round(width, 1), round(length, 1), thickness)
-                        
-                        if plate_key not in plates_dict:
-                            plates_dict[plate_key] = {
-                                "width": round(width, 1),
-                                "length": round(length, 1),
-                                "thickness": thickness,
-                                "name": element_name,
-                                "quantity": 0,
-                                "ids": []
-                            }
-                        
-                        plates_dict[plate_key]["quantity"] += 1
-                        plates_dict[plate_key]["ids"].append(element.id())
-                
-                except Exception as e:
-                    print(f"Error processing plate {element.id()}: {e}")
-                    continue
-        
-        # Prepare plates for nesting (expand quantities)
+        # Prepare plates for nesting (expand quantities from selected plates)
         plates_to_nest = []
-        for plate_key, plate_data in plates_dict.items():
-            for i in range(plate_data["quantity"]):
+        for plate_data in selected_plates_data:
+            for i in range(plate_data.get('quantity', 1)):
                 plates_to_nest.append({
-                    "width": plate_data["width"],
-                    "length": plate_data["length"],
-                    "thickness": plate_data["thickness"],
+                    "width": plate_data['width'],
+                    "length": plate_data['length'],
+                    "thickness": plate_data['thickness'],
                     "name": f"{plate_data['name']}-{i+1}",
-                    "id": f"{plate_key}-{i}"
+                    "id": f"{plate_data['name']}-{plate_data['thickness']}-{i}"
                 })
         
         if not plates_to_nest:
@@ -6509,27 +6436,35 @@ async def generate_plate_nesting(filename: str, request: Request):
         
         # Calculate weight for nested plates
         total_plate_weight = 0.0
+        thickness_values = []
+        
         for result in nesting_results:
             for plate in result['plates']:
                 # Volume = width (mm) * height (mm) * thickness (mm)
-                thickness_value = float(plate['thickness'].replace('mm', '').replace('t', '').strip())
-                volume_mm3 = plate['width'] * plate['height'] * thickness_value
-                weight_kg = volume_mm3 * STEEL_DENSITY
-                total_plate_weight += weight_kg
+                # Parse thickness - handle formats like "10mm", "10t", "10", "t10", etc.
+                thickness_str = str(plate['thickness'])
+                thickness_value = 0.0
+                
+                # Remove common prefixes/suffixes
+                thickness_clean = thickness_str.replace('mm', '').replace('t', '').replace('T', '').strip()
+                
+                try:
+                    thickness_value = float(thickness_clean)
+                except:
+                    print(f"[PLATE-NESTING] Warning: Could not parse thickness '{thickness_str}', using 10mm default")
+                    thickness_value = 10.0
+                
+                if thickness_value > 0:
+                    volume_mm3 = plate['width'] * plate['height'] * thickness_value
+                    weight_kg = volume_mm3 * STEEL_DENSITY
+                    total_plate_weight += weight_kg
+                    thickness_values.append(thickness_value)
         
         # Calculate waste weight
-        # waste weight = waste_area_mm2 * average_thickness * density
-        # Get average thickness from nested plates
-        thickness_values = []
-        for result in nesting_results:
-            for plate in result['plates']:
-                thickness_str = plate['thickness'].replace('mm', '').replace('t', '').strip()
-                try:
-                    thickness_values.append(float(thickness_str))
-                except:
-                    pass
-        avg_thickness = sum(thickness_values) / len(thickness_values) if thickness_values else 10.0  # Default 10mm
+        avg_thickness = sum(thickness_values) / len(thickness_values) if thickness_values else 10.0
         waste_weight = waste_area * avg_thickness * STEEL_DENSITY  # waste_area is in mm²
+        
+        print(f"[PLATE-NESTING] Tonnage calculation: plates={round(total_plate_weight/1000, 3)}t, waste={round(waste_weight/1000, 3)}t, avg_thickness={round(avg_thickness, 1)}mm")
         
         statistics = {
             "total_plates": total_plates,
