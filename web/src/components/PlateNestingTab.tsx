@@ -1064,21 +1064,8 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 const height = bbox[3] - bbox[1]
                 const maxDim = Math.max(width, height)
                 
-                // Dimension offset from plate edge (in plate coordinates)
-                const dimOffset = maxDim * 0.15
-                
-                // Font size (in pixels)
-                const fontSize = Math.max(14, Math.min(22, maxDim * 0.025))
-                
-                // Text space in plate coordinates (fontSize in px, convert to plate units)
-                // Approximate: fontSize pixels ≈ fontSize * (maxDim / 500) in plate units
-                const textSpace = fontSize * (maxDim / 400)
-                
-                // Total space needed for dimensions
-                const dimSpace = dimOffset + textSpace * 1.5
-                
-                // ViewBox padding - ensure dimensions are always visible
-                const viewPadding = Math.max(dimSpace, maxDim * 0.2)
+                // Simple padding for the plate view (no dimensions in SVG)
+                const viewPadding = maxDim * 0.1
                 
                 return (
                   <div className="space-y-4">
@@ -1101,84 +1088,9 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                           fill="#3b82f6" 
                           fillOpacity="0.2" 
                           stroke="#2563eb" 
-                          strokeWidth={Math.max(1, width * 0.002)}
+                          strokeWidth={Math.max(2, width * 0.003)}
                           fillRule="evenodd"
                         />
-                        
-                        {/* Width Dimension (bottom) */}
-                        <g>
-                          <line 
-                            x1={bbox[0]} 
-                            y1={bbox[3] + dimOffset * 0.7} 
-                            x2={bbox[2]} 
-                            y2={bbox[3] + dimOffset * 0.7}
-                            stroke="#374151" 
-                            strokeWidth={Math.max(1, width * 0.001)}
-                            markerStart="url(#arrowStart)" 
-                            markerEnd="url(#arrowEnd)"
-                          />
-                          <text 
-                            x={(bbox[0] + bbox[2]) / 2} 
-                            y={bbox[3] + dimOffset * 0.7 + textSpace}
-                            textAnchor="middle"
-                            fill="#1f2937"
-                            fontSize={fontSize}
-                            fontWeight="bold"
-                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 4 }}
-                          >
-                            {plateGeometry.width.toFixed(1)} mm
-                          </text>
-                        </g>
-
-                        {/* Length Dimension (right) */}
-                        <g>
-                          <line 
-                            x1={bbox[2] + dimOffset * 0.7} 
-                            y1={bbox[1]} 
-                            x2={bbox[2] + dimOffset * 0.7} 
-                            y2={bbox[3]}
-                            stroke="#374151" 
-                            strokeWidth={Math.max(1, height * 0.001)}
-                            markerStart="url(#arrowStart)" 
-                            markerEnd="url(#arrowEnd)"
-                          />
-                          <text 
-                            x={bbox[2] + dimOffset * 0.7 + textSpace} 
-                            y={(bbox[1] + bbox[3]) / 2}
-                            textAnchor="middle"
-                            fill="#1f2937"
-                            fontSize={fontSize}
-                            fontWeight="bold"
-                            transform={`rotate(90, ${bbox[2] + dimOffset * 0.7 + textSpace}, ${(bbox[1] + bbox[3]) / 2})`}
-                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 4 }}
-                          >
-                            {plateGeometry.length.toFixed(1)} mm
-                          </text>
-                        </g>
-
-                        {/* Arrow Markers */}
-                        <defs>
-                          <marker 
-                            id="arrowStart" 
-                            markerWidth="10" 
-                            markerHeight="10" 
-                            refX="5" 
-                            refY="5" 
-                            orient="auto"
-                          >
-                            <polygon points="10,5 0,0 0,10" fill="#374151" />
-                          </marker>
-                          <marker 
-                            id="arrowEnd" 
-                            markerWidth="10" 
-                            markerHeight="10" 
-                            refX="5" 
-                            refY="5" 
-                            orient="auto"
-                          >
-                            <polygon points="0,5 10,0 10,10" fill="#374151" />
-                          </marker>
-                        </defs>
                       </svg>
                     </div>
                   </div>
@@ -1201,11 +1113,46 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Thickness</p><p className="text-lg font-bold text-gray-900">{previewPlate.thickness}</p></div>
-                <div className="bg-green-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Quantity</p><p className="text-lg font-bold text-gray-900">{previewPlate.quantity}</p></div>
-                <div className="bg-purple-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Weight per piece</p><p className="text-lg font-bold text-gray-900">{(previewPlate.total_weight / previewPlate.quantity).toFixed(2)} kg</p></div>
-                <div className="bg-orange-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Total Weight</p><p className="text-lg font-bold text-gray-900">{previewPlate.total_weight.toFixed(2)} kg</p></div>
+              <div className="grid grid-cols-3 gap-4">
+                {/* Dimensions */}
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Width</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {plateGeometry && plateGeometry.has_geometry 
+                      ? `${plateGeometry.width.toFixed(1)} mm`
+                      : previewPlate.width 
+                        ? `${previewPlate.width.toFixed(1)} mm`
+                        : 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-indigo-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Length</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {plateGeometry && plateGeometry.has_geometry 
+                      ? `${plateGeometry.length.toFixed(1)} mm`
+                      : previewPlate.length 
+                        ? `${previewPlate.length.toFixed(1)} mm`
+                        : 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-cyan-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Thickness</p>
+                  <p className="text-lg font-bold text-gray-900">{previewPlate.thickness}</p>
+                </div>
+                
+                {/* Quantity and Weights */}
+                <div className="bg-green-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Quantity</p>
+                  <p className="text-lg font-bold text-gray-900">{previewPlate.quantity}</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Weight per piece</p>
+                  <p className="text-lg font-bold text-gray-900">{(previewPlate.total_weight / previewPlate.quantity).toFixed(2)} kg</p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">Total Weight</p>
+                  <p className="text-lg font-bold text-gray-900">{previewPlate.total_weight.toFixed(2)} kg</p>
+                </div>
               </div>
             </div>
           </div>
