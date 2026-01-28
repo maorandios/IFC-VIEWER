@@ -6422,6 +6422,47 @@ async def generate_plate_nesting(filename: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to generate nesting: {str(e)}")
 
 
+@app.get("/api/plate-geometry/{filename}/{element_id}")
+async def get_plate_geometry(filename: str, element_id: int):
+    """Get the actual 2D geometry of a specific plate including holes. Returns SVG path data for visualization."""
+    try:
+        from urllib.parse import unquote
+        from plate_geometry_extractor import extract_plate_2d_geometry
+        
+        decoded_filename = unquote(filename)
+        file_path = IFC_DIR / decoded_filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {decoded_filename}")
+        
+        ifc_file = ifcopenshell.open(str(file_path))
+        
+        try:
+            element = ifc_file.by_id(element_id)
+        except:
+            raise HTTPException(status_code=404, detail=f"Element {element_id} not found")
+        
+        if element.is_a() != "IfcPlate":
+            raise HTTPException(status_code=400, detail=f"Element {element_id} is not a plate")
+        
+        plate_geom = extract_plate_2d_geometry(element)
+        
+        if not plate_geom or not plate_geom.polygon:
+            return JSONResponse({"success": True, "element_id": element_id, "name": element.Name or "Unknown", "has_geometry": False, "message": "Could not extract geometry, use bounding box"})
+        
+        svg_path = plate_geom.get_svg_path()
+        num_holes = len(list(plate_geom.polygon.interiors)) if plate_geom.polygon else 0
+        
+        return JSONResponse({"success": True, "element_id": element_id, "name": plate_geom.element_name, "thickness": plate_geom.thickness, "width": plate_geom.width, "length": plate_geom.length, "area": plate_geom.area, "bounding_box": plate_geom.bounding_box, "svg_path": svg_path, "has_holes": num_holes > 0, "num_holes": num_holes, "has_geometry": True})
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to extract geometry: {str(e)}")
+
+
 @app.post("/api/generate-plate-nesting-geometry/{filename}")
 async def generate_plate_nesting_with_geometry(filename: str, request: Request):
     """
