@@ -123,6 +123,7 @@ def extract_plate_2d_geometry(element, settings=None) -> Optional[PlateGeometry]
         
         geometry = shape.geometry
         verts = geometry.verts
+        faces = geometry.faces
         
         if len(verts) < 9:  # Need at least 3 vertices (3 coords each)
             return None
@@ -135,8 +136,20 @@ def extract_plate_2d_geometry(element, settings=None) -> Optional[PlateGeometry]
         if max_coord < 1000.0:  # Likely in meters
             vertices = vertices * 1000.0
         
-        # Project to 2D using PCA
-        polygon = project_to_2d_plane(vertices)
+        # Determine plate orientation - find thickness axis
+        bbox_min = vertices.min(axis=0)
+        bbox_max = vertices.max(axis=0)
+        dimensions = bbox_max - bbox_min
+        thickness_axis = np.argmin(dimensions)
+        
+        print(f"[GEOM] Plate {element_id} dims: X={dimensions[0]:.1f}, Y={dimensions[1]:.1f}, Z={dimensions[2]:.1f}, thickness_axis={thickness_axis}")
+        
+        # Project using faces for accurate geometry with holes
+        if len(faces) >= 3:
+            faces_array = np.array(faces).reshape(-1, 3)
+            polygon = project_with_faces_aligned(vertices, faces_array, thickness_axis)
+        else:
+            polygon = project_to_aligned_plane(vertices, thickness_axis)
         
         if polygon and not polygon.is_empty and polygon.is_valid:
             plate_geom = PlateGeometry(element_id, element_name, thickness)
@@ -235,6 +248,136 @@ def project_to_2d_plane(vertices: np.ndarray) -> Optional[Polygon]:
     except Exception as e:
         print(f"[GEOM] Error in 2D projection: {e}")
         return None
+
+
+def project_to_aligned_plane(vertices: np.ndarray, thickness_axis: int) -> Optional[Polygon]:
+    """
+    Project vertices to 2D by removing the thickness axis.
+    This keeps the plate aligned to world axes (not tilted).
+    
+    Args:
+        vertices: Nx3 array of 3D vertices
+        thickness_axis: 0=X, 1=Y, 2=Z (axis to remove)
+    
+    Returns:
+        Shapely Polygon
+    """
+    try:
+        # Project by removing thickness axis
+        if thickness_axis == 0:  # Remove X, keep Y-Z
+            points_2d = vertices[:, [1, 2]]
+        elif thickness_axis == 1:  # Remove Y, keep X-Z  
+            points_2d = vertices[:, [0, 2]]
+        else:  # Remove Z, keep X-Y
+            points_2d = vertices[:, [0, 1]]
+        
+        # Remove duplicates
+        unique_points = np.unique(points_2d, axis=0)
+        
+        if len(unique_points) < 3:
+            return None
+        
+        # Use convex hull as fallback
+        hull = ConvexHull(unique_points)
+        boundary_points = unique_points[hull.vertices]
+        polygon = Polygon(boundary_points)
+        
+        if polygon.is_valid:
+            return polygon.simplify(0.5, preserve_topology=True)
+        return None
+        
+    except Exception as e:
+        print(f"[GEOM] Error in aligned projection: {e}")
+        return None
+
+
+def project_with_faces_aligned(vertices: np.ndarray, faces: np.ndarray, thickness_axis: int) -> Optional[Polygon]:
+    """
+    Project 3D mesh to 2D using face information to preserve exact geometry including holes.
+    Aligns to world axes (not tilted).
+    
+    Args:
+        vertices: Nx3 array of 3D vertices
+        faces: Mx3 array of triangle face indices
+        thickness_axis: 0=X, 1=Y, 2=Z (axis to remove)
+    
+    Returns:
+        Shapely Polygon with holes
+    """
+    try:
+        from shapely.ops import unary_union
+        from shapely.geometry import Polygon as ShapelyPolygon
+        
+        # Project vertices to 2D
+        if thickness_axis == 0:  # Remove X, keep Y-Z
+            points_2d = vertices[:, [1, 2]]
+        elif thickness_axis == 1:  # Remove Y, keep X-Z
+            points_2d = vertices[:, [0, 2]]
+        else:  # Remove Z, keep X-Y
+            points_2d = vertices[:, [0, 1]]
+        
+        print(f"[GEOM] Projecting {len(faces)} faces to 2D")
+        
+        # Convert each triangular face to a polygon
+        face_polygons = []
+        for face in faces:
+            try:
+                tri_points = points_2d[face]
+                
+                # Check if triangle has area
+                p1, p2, p3 = tri_points[0], tri_points[1], tri_points[2]
+                area = 0.5 * abs((p2[0] - p1[0]) * (p3[1] - p1[1]) - (p3[0] - p1[0]) * (p2[1] - p1[1]))
+                
+                if area > 0.01:  # Skip degenerate triangles
+                    tri_poly = ShapelyPolygon(tri_points)
+                    if tri_poly.is_valid:
+                        face_polygons.append(tri_poly)
+            except:
+                continue
+        
+        if not face_polygons:
+            print(f"[GEOM] No valid face polygons, using fallback")
+            return project_to_aligned_plane(vertices, thickness_axis)
+        
+        print(f"[GEOM] Created {len(face_polygons)} valid face polygons")
+        
+        # Merge all triangles into one polygon (automatically detects holes)
+        merged = unary_union(face_polygons)
+        
+        print(f"[GEOM] Merged result type: {merged.geom_type}")
+        
+        # Handle different result types
+        if merged.geom_type == 'Polygon':
+            num_holes = len(list(merged.interiors))
+            print(f"[GEOM] Single polygon with {num_holes} holes, area={merged.area:.0f}")
+            return merged
+            
+        elif merged.geom_type == 'MultiPolygon':
+            # Take largest polygon, treat others as holes if they're inside
+            polys = list(merged.geoms)
+            polys.sort(key=lambda p: p.area, reverse=True)
+            outer = polys[0]
+            
+            # Find holes
+            holes = []
+            for poly in polys[1:]:
+                if outer.contains(poly.centroid):
+                    holes.append(list(poly.exterior.coords))
+            
+            if holes:
+                print(f"[GEOM] MultiPolygon: using largest with {len(holes)} holes")
+                return ShapelyPolygon(outer.exterior.coords, holes=holes)
+            else:
+                print(f"[GEOM] MultiPolygon: using largest polygon only")
+                return outer
+        else:
+            print(f"[GEOM] Unexpected type {merged.geom_type}, using fallback")
+            return project_to_aligned_plane(vertices, thickness_axis)
+        
+    except Exception as e:
+        print(f"[GEOM] Error in face-based projection: {e}")
+        traceback.print_exc()
+        return project_to_aligned_plane(vertices, thickness_axis)
 
 
 def extract_thickness(element) -> str:

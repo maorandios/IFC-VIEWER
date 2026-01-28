@@ -1049,9 +1049,144 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
               <button onClick={handleClosePreview} className="text-gray-400 hover:text-gray-600 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
             <div className="p-6 space-y-6">
-              {loadingGeometry && !plateGeometry && (<div className="flex flex-col items-center justify-center py-12 space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div><p className="text-gray-600">Loading geometry...</p></div>)}
-              {!loadingGeometry && plateGeometry && plateGeometry.has_geometry && plateGeometry.svg_path && (<div className="space-y-4"><div className="flex justify-center"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">✓ Actual Geometry {plateGeometry.num_holes > 0 ? `with ${plateGeometry.num_holes} hole(s)` : ''}</span></div><div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center"><svg width="100%" height="400" viewBox={`${plateGeometry.bounding_box[0] - 50} ${plateGeometry.bounding_box[1] - 50} ${plateGeometry.bounding_box[2] - plateGeometry.bounding_box[0] + 100} ${plateGeometry.bounding_box[3] - plateGeometry.bounding_box[1] + 100}`} className="max-w-full"><path d={plateGeometry.svg_path} fill="#3b82f6" fillOpacity="0.2" stroke="#3b82f6" strokeWidth="2" fillRule="evenodd" /><g><line x1={plateGeometry.bounding_box[0]} y1={plateGeometry.bounding_box[3] + 30} x2={plateGeometry.bounding_box[2]} y2={plateGeometry.bounding_box[3] + 30} stroke="#374151" strokeWidth="1" markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)" /><text x={(plateGeometry.bounding_box[0] + plateGeometry.bounding_box[2]) / 2} y={plateGeometry.bounding_box[3] + 45} textAnchor="middle" fill="#374151" fontSize="14" fontWeight="bold">{plateGeometry.width.toFixed(1)} mm</text></g><g><line x1={plateGeometry.bounding_box[2] + 30} y1={plateGeometry.bounding_box[1]} x2={plateGeometry.bounding_box[2] + 30} y2={plateGeometry.bounding_box[3]} stroke="#374151" strokeWidth="1" markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)" /><text x={plateGeometry.bounding_box[2] + 45} y={(plateGeometry.bounding_box[1] + plateGeometry.bounding_box[3]) / 2} textAnchor="middle" fill="#374151" fontSize="14" fontWeight="bold" transform={`rotate(90, ${plateGeometry.bounding_box[2] + 45}, ${(plateGeometry.bounding_box[1] + plateGeometry.bounding_box[3]) / 2})`}>{plateGeometry.length.toFixed(1)} mm</text></g><defs><marker id="arrowStart" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><polygon points="10,5 0,0 0,10" fill="#374151" /></marker><marker id="arrowEnd" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><polygon points="0,5 10,0 10,10" fill="#374151" /></marker></defs></svg></div></div>)}
-              {!loadingGeometry && (!plateGeometry || !plateGeometry.has_geometry || !plateGeometry.svg_path) && previewPlate.width && previewPlate.length && (<div className="space-y-4"><div className="flex justify-center"><span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">⚠️ Bounding Box (Geometry not available)</span></div><div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center"><svg width="100%" height="400" viewBox={`-50 -50 ${previewPlate.width + 100} ${previewPlate.length + 100}`} className="max-w-full"><rect x="0" y="0" width={previewPlate.width} height={previewPlate.length} fill="#3b82f6" fillOpacity="0.2" stroke="#3b82f6" strokeWidth="2" /></svg></div></div>)}
+              {/* Loading State */}
+              {loadingGeometry && !plateGeometry && (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  <p className="text-gray-600">Loading geometry...</p>
+                </div>
+              )}
+
+              {/* Actual Geometry View */}
+              {!loadingGeometry && plateGeometry && plateGeometry.has_geometry && plateGeometry.svg_path && (() => {
+                const bbox = plateGeometry.bounding_box
+                const width = bbox[2] - bbox[0]
+                const height = bbox[3] - bbox[1]
+                const dimOffset = Math.max(width, height) * 0.15
+                const viewPadding = Math.max(width, height) * 0.25
+                const fontSize = Math.max(12, Math.min(18, Math.max(width, height) * 0.03))
+                
+                return (
+                  <div className="space-y-4">
+                    <div className="flex justify-center">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                        ✓ Actual Geometry {plateGeometry.num_holes > 0 ? `with ${plateGeometry.num_holes} hole(s)` : ''}
+                      </span>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center">
+                      <svg 
+                        width="100%" 
+                        height="500" 
+                        viewBox={`${bbox[0] - viewPadding} ${bbox[1] - viewPadding} ${width + viewPadding * 2} ${height + viewPadding * 2}`}
+                        preserveAspectRatio="xMidYMid meet"
+                        className="max-w-full"
+                      >
+                        {/* Plate Geometry */}
+                        <path 
+                          d={plateGeometry.svg_path} 
+                          fill="#3b82f6" 
+                          fillOpacity="0.2" 
+                          stroke="#2563eb" 
+                          strokeWidth={Math.max(1, width * 0.002)}
+                          fillRule="evenodd"
+                        />
+                        
+                        {/* Width Dimension (bottom) */}
+                        <g>
+                          <line 
+                            x1={bbox[0]} 
+                            y1={bbox[3] + dimOffset} 
+                            x2={bbox[2]} 
+                            y2={bbox[3] + dimOffset}
+                            stroke="#374151" 
+                            strokeWidth={Math.max(1, width * 0.001)}
+                            markerStart="url(#arrowStart)" 
+                            markerEnd="url(#arrowEnd)"
+                          />
+                          <text 
+                            x={(bbox[0] + bbox[2]) / 2} 
+                            y={bbox[3] + dimOffset + fontSize * 1.5}
+                            textAnchor="middle"
+                            fill="#1f2937"
+                            fontSize={fontSize}
+                            fontWeight="bold"
+                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 3 }}
+                          >
+                            {plateGeometry.width.toFixed(1)} mm
+                          </text>
+                        </g>
+
+                        {/* Length Dimension (right) */}
+                        <g>
+                          <line 
+                            x1={bbox[2] + dimOffset} 
+                            y1={bbox[1]} 
+                            x2={bbox[2] + dimOffset} 
+                            y2={bbox[3]}
+                            stroke="#374151" 
+                            strokeWidth={Math.max(1, height * 0.001)}
+                            markerStart="url(#arrowStart)" 
+                            markerEnd="url(#arrowEnd)"
+                          />
+                          <text 
+                            x={bbox[2] + dimOffset + fontSize * 1.5} 
+                            y={(bbox[1] + bbox[3]) / 2}
+                            textAnchor="middle"
+                            fill="#1f2937"
+                            fontSize={fontSize}
+                            fontWeight="bold"
+                            transform={`rotate(90, ${bbox[2] + dimOffset + fontSize * 1.5}, ${(bbox[1] + bbox[3]) / 2})`}
+                            style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: 3 }}
+                          >
+                            {plateGeometry.length.toFixed(1)} mm
+                          </text>
+                        </g>
+
+                        {/* Arrow Markers */}
+                        <defs>
+                          <marker 
+                            id="arrowStart" 
+                            markerWidth="10" 
+                            markerHeight="10" 
+                            refX="5" 
+                            refY="5" 
+                            orient="auto"
+                          >
+                            <polygon points="10,5 0,0 0,10" fill="#374151" />
+                          </marker>
+                          <marker 
+                            id="arrowEnd" 
+                            markerWidth="10" 
+                            markerHeight="10" 
+                            refX="5" 
+                            refY="5" 
+                            orient="auto"
+                          >
+                            <polygon points="0,5 10,0 10,10" fill="#374151" />
+                          </marker>
+                        </defs>
+                      </svg>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Fallback Bounding Box */}
+              {!loadingGeometry && (!plateGeometry || !plateGeometry.has_geometry || !plateGeometry.svg_path) && previewPlate.width && previewPlate.length && (
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                      ⚠️ Bounding Box (Geometry not available)
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-6 flex items-center justify-center">
+                    <svg width="100%" height="400" viewBox={`-50 -50 ${previewPlate.width + 100} ${previewPlate.length + 100}`} preserveAspectRatio="xMidYMid meet" className="max-w-full">
+                      <rect x="0" y="0" width={previewPlate.width} height={previewPlate.length} fill="#3b82f6" fillOpacity="0.2" stroke="#3b82f6" strokeWidth="2" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Thickness</p><p className="text-lg font-bold text-gray-900">{previewPlate.thickness}</p></div>
                 <div className="bg-green-50 rounded-lg p-4"><p className="text-xs text-gray-600 mb-1">Quantity</p><p className="text-lg font-bold text-gray-900">{previewPlate.quantity}</p></div>
