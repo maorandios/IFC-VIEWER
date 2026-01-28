@@ -6371,8 +6371,8 @@ async def generate_plate_nesting(filename: str, request: Request):
                     
                     packer.pack()
                     
-                    # Evaluate result
-                    if packer[0]:
+                    # Evaluate result - safely check if packer has bins
+                    if len(packer) > 0 and packer[0]:
                         packed_count = len(packer[0])
                         
                         # Calculate utilization
@@ -6460,7 +6460,7 @@ async def generate_plate_nesting(filename: str, request: Request):
                 best_result['stock_name'] = f"Stock {best_result['stock_index'] + 1}"
                 
                 rotated_count = sum(1 for p in best_result['plates'] if p.get('rotated', False))
-                print(f"[PLATE-NESTING] ✓ Selected: Stock {best_stock_idx + 1}, "
+                print(f"[PLATE-NESTING] OK Selected: Stock {best_stock_idx + 1}, "
                       f"{len(best_result['plates'])} plates ({rotated_count} rotated), "
                       f"{utilization:.1f}% utilization")
                 

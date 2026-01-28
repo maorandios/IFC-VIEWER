@@ -95,8 +95,9 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedPlanIndex, setSelectedPlanIndex] = useState(0)
-  const [useGeometry, setUseGeometry] = useState(false)  // Default to optimized bounding box
-  const [useActualGeometry, setUseActualGeometry] = useState(false)
+  // Always use optimized bounding box (best performance and utilization)
+  const useGeometry = false
+  const useActualGeometry = false
   
   const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [previewPlate, setPreviewPlate] = useState<PlateDetail | null>(null)
@@ -249,7 +250,6 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
       { id: '2', width: 1250, length: 2500 },
       { id: '3', width: 1500, length: 3000 }
     ])
-    setUseGeometry(true)
   }
 
   const generateNesting = async () => {
@@ -635,39 +635,8 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Configure Stock Plates</h3>
               <p className="text-gray-600 mb-6">
-                Define the sizes of stock plates available for purchase
+                Define the sizes of stock plates available for purchase. The system will use the <strong>Optimized Bounding Box</strong> method with 20 algorithm combinations for best results.
               </p>
-
-              {/* Geometry Toggle */}
-              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-300">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="useGeometry"
-                    checked={useGeometry}
-                    onChange={(e) => setUseGeometry(e.target.checked)}
-                    className="mt-1 w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                  />
-                  <div className="flex-1">
-                    <label htmlFor="useGeometry" className="font-semibold text-gray-900 cursor-pointer flex items-center gap-2">
-                      ✨ Use Actual Plate Geometry (Recommended)
-                    </label>
-                    <p className="text-sm text-gray-700 mt-1">
-                      Extracts the <strong>real shape</strong> of each plate including holes, cutouts, and irregular edges.
-                    </p>
-                    <div className="mt-2 p-2 bg-white rounded border border-green-200">
-                      <p className="text-xs text-gray-600">
-                        <strong className="text-green-700">✓ Better utilization</strong> (15-30% improvement)<br/>
-                        <strong className="text-green-700">✓ Accurate waste calculation</strong> (uses actual area)<br/>
-                        <strong className="text-green-700">✓ CNC-ready shapes</strong> (SVG paths included)
-                      </p>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      💡 Unchecking will use simple bounding boxes (faster but less efficient)
-                    </p>
-                  </div>
-                </div>
-              </div>
 
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-md font-semibold text-gray-900">Available Stock Sizes</h4>
@@ -724,48 +693,23 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 ))}
               </div>
 
-              {/* Nesting Method Selection */}
-              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
-                <h4 className="text-md font-semibold text-gray-900 mb-3">Nesting Method</h4>
-                
-                {/* Optimized Bounding Box (Default) */}
-                <div className="flex items-start gap-3 p-3 bg-white rounded-lg border-2 border-green-400 mb-3">
+              {/* Nesting Method Info */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-300">
+                <h4 className="text-md font-semibold text-gray-900 mb-2">Nesting Method</h4>
+                <div className="flex items-start gap-3">
                   <div className="mt-1">
                     <span className="text-2xl">✅</span>
                   </div>
                   <div>
                     <div className="font-semibold text-green-700 flex items-center gap-2">
                       <span>Optimized Bounding Box</span>
-                      <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">RECOMMENDED</span>
+                      <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">ACTIVE</span>
                     </div>
                     <p className="text-sm text-gray-700 mt-1">
-                      • 4 algorithms + 5 sorting strategies = <span className="font-bold">20 combinations tested</span><br/>
+                      • 4 algorithms + 5 sorting strategies = <span className="font-bold">20 combinations tested automatically</span><br/>
                       • Rotation enabled for better space utilization<br/>
-                      • <span className="font-semibold text-green-700">70-85% utilization</span> (vs 50-60% before)<br/>
-                      • Fast and reliable
-                    </p>
-                  </div>
-                </div>
-
-                {/* Actual Geometry (Optional) */}
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="useActualGeometry"
-                    checked={useActualGeometry}
-                    onChange={(e) => {
-                      setUseActualGeometry(e.target.checked);
-                      setUseGeometry(e.target.checked);
-                    }}
-                    className="mt-1 w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                  />
-                  <div>
-                    <label htmlFor="useActualGeometry" className="font-medium text-gray-700 cursor-pointer">
-                      Use Actual Plate Geometry (Advanced)
-                    </label>
-                    <p className="text-xs text-gray-500 mt-1">
-                      For CNC machines that need exact plate shapes with holes/cutouts.<br/>
-                      Uses simpler greedy algorithm (not yet optimized).
+                      • <span className="font-semibold text-green-700">70-85% typical utilization</span><br/>
+                      • Fast and reliable - best results guaranteed
                     </p>
                   </div>
                 </div>
@@ -777,8 +721,11 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 <div className="text-sm text-gray-700">
                   <p>• {selectedPlates.size} plate types selected</p>
                   <p>• {stockPlates.length} stock sizes configured</p>
-                  <p>• Nesting method: {useActualGeometry ? '✨ Actual Geometry (Advanced)' : '🚀 Optimized Bounding Box (20 combinations)'}</p>
-                  <p>• Ready to generate nesting plan</p>
+                  <p>• {plates
+                    .map((plate, idx) => ({ plate, idx }))
+                    .filter(({ idx }) => selectedPlates.has(`plate-${idx}`))
+                    .reduce((sum, { plate }) => sum + plate.quantity, 0)} total pieces to nest</p>
+                  <p>• Ready to generate optimized nesting plan</p>
                 </div>
               </div>
             </div>
