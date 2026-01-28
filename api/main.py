@@ -6453,7 +6453,7 @@ async def get_plate_geometry(filename: str, element_id: int):
         svg_path = plate_geom.get_svg_path()
         num_holes = len(list(plate_geom.polygon.interiors)) if plate_geom.polygon else 0
         
-        return JSONResponse({"success": True, "element_id": element_id, "name": plate_geom.element_name, "thickness": plate_geom.thickness, "width": plate_geom.width, "length": plate_geom.length, "area": plate_geom.area, "bounding_box": plate_geom.bounding_box, "svg_path": svg_path, "has_holes": num_holes > 0, "num_holes": num_holes, "has_geometry": True})
+        return JSONResponse({"success": True, "element_id": element_id, "name": plate_geom.name, "thickness": plate_geom.thickness, "width": plate_geom.width, "length": plate_geom.length, "area": plate_geom.area, "bounding_box": plate_geom.bounding_box, "svg_path": svg_path, "has_holes": num_holes > 0, "num_holes": num_holes, "has_geometry": True})
         
     except HTTPException:
         raise
