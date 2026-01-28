@@ -38,6 +38,7 @@ interface PlateInPlan {
   svg_path?: string
   actual_area?: number
   has_complex_geometry?: boolean
+  rotated?: boolean
 }
 
 interface CuttingPlan {
@@ -924,6 +925,11 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                         <span className="ml-2">•</span>
                         <span className="ml-2">{nestingResults.cutting_plans[selectedPlanIndex].utilization}% utilized</span>
                       </p>
+                      {(nestingResults.cutting_plans[selectedPlanIndex] as any).algorithm && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Algorithm: {(nestingResults.cutting_plans[selectedPlanIndex] as any).algorithm} + {(nestingResults.cutting_plans[selectedPlanIndex] as any).sorting}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -984,6 +990,16 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                                 stroke="#374151"
                                 strokeWidth="1"
                               />
+                              {/* Rotation indicator */}
+                              {plate.rotated && (
+                                <path
+                                  d={`M ${plate.x + 8} ${plate.y + 8} L ${plate.x + 20} ${plate.y + 8} L ${plate.x + 17} ${plate.y + 5} M ${plate.x + 20} ${plate.y + 8} L ${plate.x + 17} ${plate.y + 11}`}
+                                  stroke="#ef4444"
+                                  strokeWidth="2"
+                                  fill="none"
+                                  strokeLinecap="round"
+                                />
+                              )}
                               <text
                                 x={plate.x + plate.width / 2}
                                 y={plate.y + plate.height / 2}
@@ -994,6 +1010,7 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                                 fontWeight="bold"
                               >
                                 {plate.width}×{plate.height}
+                                {plate.rotated && ' ↻'}
                               </text>
                             </>
                           )}
@@ -1002,6 +1019,22 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                     </svg>
                   </div>
 
+                  {/* Legend */}
+                  <div className="mt-4 flex items-center gap-6 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-blue-500 rounded border border-gray-300"></div>
+                      <span>Plate (by thickness)</span>
+                    </div>
+                    {nestingResults.cutting_plans[selectedPlanIndex].plates.some(p => p.rotated) && (
+                      <div className="flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 16 16" className="text-red-500">
+                          <path d="M 3 3 L 13 3 L 10 1 M 13 3 L 10 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
+                        </svg>
+                        <span>Rotated plate (↻)</span>
+                      </div>
+                    )}
+                  </div>
+                  
                   {/* Plates List */}
                   <div className="mt-4">
                     <h5 className="text-sm font-semibold text-gray-700 mb-2">Plates in this sheet:</h5>
@@ -1017,6 +1050,7 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                           />
                           <span className="text-gray-700">
                             {plate.width}×{plate.height}mm ({plate.thickness})
+                            {plate.rotated && <span className="text-red-500 ml-1">↻</span>}
                           </span>
                         </div>
                       ))}

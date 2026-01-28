@@ -6212,12 +6212,16 @@ async def toggle_shipped(filename: str, request: Request):
 
 @app.post("/api/generate-plate-nesting/{filename}")
 async def generate_plate_nesting(filename: str, request: Request):
-    """Generate nesting plan for plates from IFC model.
+    """Generate nesting plan for plates from IFC model with advanced optimization.
     
-    Takes stock plate configurations and generates optimized cutting plans.
+    Takes stock plate configurations and generates optimized cutting plans using:
+    - Multiple MaxRects algorithms (Bssf, Bl, Baf, Blsf)
+    - Rotation enabled for better space utilization
+    - Multiple sorting strategies
+    - Iterative optimization to find best result
     """
     try:
-        from rectpack import newPacker, MaxRectsBssf
+        from rectpack import newPacker, MaxRectsBssf, MaxRectsBl, MaxRectsBaf, MaxRectsBlsf
         
         # Get request body with stock plates configuration
         body = await request.json()
@@ -6323,50 +6327,128 @@ async def generate_plate_nesting(filename: str, request: Request):
                 "statistics": {}
             })
         
+        print(f"\n[PLATE-NESTING] === STARTING OPTIMIZED NESTING ===")
+        print(f"[PLATE-NESTING] Total plates to nest: {len(plates_to_nest)}")
+        print(f"[PLATE-NESTING] Stock sizes available: {len(stock_plates)}")
+        
+        # Advanced nesting optimization function
+        def optimize_single_sheet(plates, stock, stock_idx):
+            """Try multiple algorithms and sorting strategies to find best packing."""
+            
+            algorithms = [
+                ('MaxRectsBssf', MaxRectsBssf),
+                ('MaxRectsBl', MaxRectsBl),
+                ('MaxRectsBaf', MaxRectsBaf),
+                ('MaxRectsBlsf', MaxRectsBlsf)
+            ]
+            
+            # Sorting strategies
+            sorting_strategies = [
+                ('area_desc', lambda p: p['width'] * p['length'], True),
+                ('max_dim_desc', lambda p: max(p['width'], p['length']), True),
+                ('min_dim_desc', lambda p: min(p['width'], p['length']), True),
+                ('width_desc', lambda p: p['width'], True),
+                ('perimeter_desc', lambda p: 2 * (p['width'] + p['length']), True),
+            ]
+            
+            best_result = None
+            best_packed_count = 0
+            best_utilization = 0
+            best_config = ""
+            
+            # Try each combination
+            for algo_name, algo_class in algorithms:
+                for sort_name, sort_key, reverse in sorting_strategies:
+                    # Sort plates
+                    sorted_plates = sorted(plates, key=sort_key, reverse=reverse)
+                    
+                    # Pack with rotation enabled
+                    packer = newPacker(rotation=True, pack_algo=algo_class)
+                    packer.add_bin(stock['width'], stock['length'])
+                    
+                    for plate in sorted_plates:
+                        packer.add_rect(plate['width'], plate['length'], rid=plate['id'])
+                    
+                    packer.pack()
+                    
+                    # Evaluate result
+                    if packer[0]:
+                        packed_count = len(packer[0])
+                        
+                        # Calculate utilization
+                        total_area = sum(r.width * r.height for r in packer[0])
+                        stock_area = stock['width'] * stock['length']
+                        utilization = (total_area / stock_area) * 100
+                        
+                        # Better if: more plates OR same plates but better utilization
+                        is_better = (packed_count > best_packed_count) or \
+                                   (packed_count == best_packed_count and utilization > best_utilization)
+                        
+                        if is_better:
+                            best_packed_count = packed_count
+                            best_utilization = utilization
+                            best_config = f"{algo_name}+{sort_name}"
+                            
+                            best_result = {
+                                'stock_width': stock['width'],
+                                'stock_length': stock['length'],
+                                'stock_index': stock_idx,
+                                'plates': [],
+                                'algorithm': algo_name,
+                                'sorting': sort_name
+                            }
+                            
+                            # Get packed plates with rotation info
+                            for rect in packer[0]:
+                                plate_info = next(p for p in plates if p['id'] == rect.rid)
+                                
+                                # Check if plate was rotated
+                                was_rotated = (rect.width == plate_info['length'] and 
+                                             rect.height == plate_info['width'])
+                                
+                                best_result['plates'].append({
+                                    'x': rect.x,
+                                    'y': rect.y,
+                                    'width': rect.width,
+                                    'height': rect.height,
+                                    'name': plate_info['name'],
+                                    'thickness': plate_info['thickness'],
+                                    'id': rect.rid,
+                                    'rotated': was_rotated
+                                })
+            
+            if best_result:
+                print(f"[PLATE-NESTING] Stock {stock_idx + 1} ({stock['width']}x{stock['length']}mm): "
+                      f"{best_packed_count} plates, {best_utilization:.1f}% util [{best_config}]")
+            
+            return best_result, best_packed_count, best_utilization
+        
         # Run nesting algorithm for each stock plate size
         nesting_results = []
         remaining_plates = plates_to_nest.copy()
         stock_index = 0
         
         while remaining_plates and stock_index < 100:  # Limit iterations
-            # Try each stock size
+            print(f"\n[PLATE-NESTING] === Sheet {stock_index + 1}: {len(remaining_plates)} plates remaining ===")
+            
+            # Try each stock size with optimization
             best_result = None
             best_stock_idx = -1
+            best_packed_count = 0
+            best_utilization = 0
             
             for idx, stock in enumerate(stock_plates):
-                packer = newPacker(rotation=False, pack_algo=MaxRectsBssf)
-                packer.add_bin(stock['width'], stock['length'])
+                result, packed_count, utilization = optimize_single_sheet(
+                    remaining_plates, stock, idx
+                )
                 
-                # Add all remaining plates
-                for plate in remaining_plates:
-                    packer.add_rect(plate['width'], plate['length'], rid=plate['id'])
-                
-                packer.pack()
-                
-                # Count how many plates fit
-                packed_count = len(packer[0])
-                
-                if packed_count > 0 and (best_result is None or packed_count > len(best_result['plates'])):
-                    best_result = {
-                        'stock_width': stock['width'],
-                        'stock_length': stock['length'],
-                        'stock_index': idx,
-                        'plates': []
-                    }
+                # Choose stock that packs most plates, or best utilization if equal
+                if result and (packed_count > best_packed_count or 
+                              (packed_count == best_packed_count and utilization > best_utilization)):
+                    best_result = result
                     best_stock_idx = idx
-                    
-                    # Get packed plates
-                    for rect in packer[0]:
-                        plate_info = next(p for p in remaining_plates if p['id'] == rect.rid)
-                        best_result['plates'].append({
-                            'x': rect.x,
-                            'y': rect.y,
-                            'width': rect.width,
-                            'height': rect.height,
-                            'name': plate_info['name'],
-                            'thickness': plate_info['thickness'],
-                            'id': rect.rid
-                        })
+                    best_packed_count = packed_count
+                    best_utilization = utilization
             
             if best_result and best_result['plates']:
                 # Calculate utilization
@@ -6376,6 +6458,12 @@ async def generate_plate_nesting(filename: str, request: Request):
                 
                 best_result['utilization'] = round(utilization, 2)
                 best_result['stock_name'] = f"Stock {best_result['stock_index'] + 1}"
+                
+                rotated_count = sum(1 for p in best_result['plates'] if p.get('rotated', False))
+                print(f"[PLATE-NESTING] ✓ Selected: Stock {best_stock_idx + 1}, "
+                      f"{len(best_result['plates'])} plates ({rotated_count} rotated), "
+                      f"{utilization:.1f}% utilization")
+                
                 nesting_results.append(best_result)
                 
                 # Remove packed plates from remaining
@@ -6383,6 +6471,7 @@ async def generate_plate_nesting(filename: str, request: Request):
                 remaining_plates = [p for p in remaining_plates if p['id'] not in packed_ids]
             else:
                 # No more plates fit
+                print(f"[PLATE-NESTING] No more plates can fit in available stock sizes")
                 break
             
             stock_index += 1
