@@ -542,7 +542,7 @@ def get_plate_thickness(element) -> str:
     try:
         psets = ifcopenshell.util.element.get_psets(element)
         
-        # First priority: explicit thickness properties
+        # First priority: explicit thickness properties (must be <= 40mm)
         for pset_name, props in psets.items():
             for key in ["Thickness", "thickness", "ThicknessProfile", "thickness_profile", 
                        "Profile", "profile", "PlateThickness", "plate_thickness",
@@ -554,12 +554,12 @@ def get_plate_thickness(element) -> str:
                         if value_str and value_str.upper() not in ['NONE', 'NULL', 'N/A', '']:
                             try:
                                 thickness_num = float(value_str)
-                                if thickness_num > 0 and thickness_num < 1000:
+                                if 0 < thickness_num <= 40:  # Only accept reasonable plate thickness
                                     return f"{int(thickness_num)}mm"
                             except ValueError:
                                 return value_str
         
-        # Try to get from geometry bounding box (smallest dimension is thickness)
+        # Second priority: geometry bounding box (smallest dimension <= 40mm)
         if HAS_GEOM:
             try:
                 settings = ifcopenshell.geom.settings()
@@ -578,14 +578,14 @@ def get_plate_thickness(element) -> str:
                         if np.max(dims) < 100:
                             dims = dims * 1000
                         
-                        # Smallest dimension is thickness
+                        # Smallest dimension is thickness (must be reasonable)
                         thickness = np.min(dims)
-                        if thickness > 0 and thickness < 1000:
+                        if 0 < thickness <= 40:  # Only accept reasonable plate thickness
                             return f"{int(thickness)}mm"
             except:
                 pass
         
-        # Last resort: Tekla Quantity - pick smallest dimension
+        # Last resort: Tekla Quantity - pick smallest dimension (must be <= 40mm)
         if "Tekla Quantity" in psets:
             tekla_qty = psets["Tekla Quantity"]
             dimensions = []
@@ -598,7 +598,7 @@ def get_plate_thickness(element) -> str:
             
             if len(dimensions) >= 2:
                 thickness = min(dimensions)
-                if thickness > 0 and thickness < 1000:
+                if 0 < thickness <= 40:  # Only accept reasonable plate thickness
                     return f"{int(thickness)}mm"
     except Exception as e:
         print(f"[PLATE_THICKNESS] Error getting psets for element {element.id() if hasattr(element, 'id') else 'unknown'}: {e}")
