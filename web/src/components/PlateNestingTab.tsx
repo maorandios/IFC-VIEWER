@@ -1062,9 +1062,19 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                 const bbox = plateGeometry.bounding_box
                 const width = bbox[2] - bbox[0]
                 const height = bbox[3] - bbox[1]
-                const dimOffset = Math.max(width, height) * 0.15
-                const viewPadding = Math.max(width, height) * 0.25
-                const fontSize = Math.max(12, Math.min(18, Math.max(width, height) * 0.03))
+                const maxDim = Math.max(width, height)
+                
+                // Dimension offset from plate edge
+                const dimOffset = maxDim * 0.12
+                
+                // Font size based on plate size
+                const fontSize = Math.max(14, Math.min(20, maxDim * 0.025))
+                
+                // Total space needed for dimensions (line + text + padding)
+                const dimSpace = dimOffset + fontSize * 2.5
+                
+                // ViewBox padding includes space for dimensions
+                const viewPadding = Math.max(dimSpace, maxDim * 0.05)
                 
                 return (
                   <div className="space-y-4">
