@@ -903,88 +903,146 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
 
                   {/* SVG Visualization */}
                   <div className="bg-white rounded-lg p-4 overflow-auto">
-                    <svg
-                      viewBox={`0 0 ${nestingResults.cutting_plans[selectedPlanIndex].stock_width} ${nestingResults.cutting_plans[selectedPlanIndex].stock_length}`}
-                      className="w-full h-auto border border-gray-300"
-                      style={{ maxHeight: '600px' }}
-                    >
-                      {/* Stock plate background */}
-                      <rect
-                        x="0"
-                        y="0"
-                        width={nestingResults.cutting_plans[selectedPlanIndex].stock_width}
-                        height={nestingResults.cutting_plans[selectedPlanIndex].stock_length}
-                        fill="#f9fafb"
-                        stroke="#d1d5db"
-                        strokeWidth="2"
-                      />
-
-                      {/* Nested plates */}
-                      {nestingResults.cutting_plans[selectedPlanIndex].plates.map((plate, idx) => (
-                        <g key={idx}>
-                          {plate.svg_path ? (
-                            /* Render actual plate geometry */
-                            <>
-                              <path
-                                d={plate.svg_path}
-                                fill={getColorForThickness(plate.thickness)}
-                                fillOpacity="0.7"
-                                stroke="#374151"
-                                strokeWidth="2"
-                              />
-                              <text
-                                x={plate.x + plate.width / 2}
-                                y={plate.y + plate.height / 2}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill="#ffffff"
-                                fontSize="10"
-                                fontWeight="bold"
-                              >
-                                {plate.width.toFixed(0)}×{plate.height.toFixed(0)}
-                                {plate.has_complex_geometry && ' ⭐'}
-                              </text>
-                            </>
-                          ) : (
-                            /* Render bounding box rectangle */
-                            <>
-                              <rect
-                                x={plate.x}
-                                y={plate.y}
-                                width={plate.width}
-                                height={plate.height}
-                                fill={getColorForThickness(plate.thickness)}
-                                fillOpacity="0.7"
-                                stroke="#374151"
-                                strokeWidth="1"
-                              />
-                              {/* Rotation indicator */}
-                              {plate.rotated && (
-                                <path
-                                  d={`M ${plate.x + 8} ${plate.y + 8} L ${plate.x + 20} ${plate.y + 8} L ${plate.x + 17} ${plate.y + 5} M ${plate.x + 20} ${plate.y + 8} L ${plate.x + 17} ${plate.y + 11}`}
-                                  stroke="#ef4444"
-                                  strokeWidth="2"
-                                  fill="none"
-                                  strokeLinecap="round"
-                                />
-                              )}
-                              <text
-                                x={plate.x + plate.width / 2}
-                                y={plate.y + plate.height / 2}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill="#ffffff"
-                                fontSize="12"
-                                fontWeight="bold"
-                              >
-                                {plate.width}×{plate.height}
-                                {plate.rotated && ' ↻'}
-                              </text>
-                            </>
+                    {(() => {
+                      const stockWidth = nestingResults.cutting_plans[selectedPlanIndex].stock_width;
+                      const stockLength = nestingResults.cutting_plans[selectedPlanIndex].stock_length;
+                      
+                      // Check if we need to rotate to landscape (portrait if length > width)
+                      const isPortrait = stockLength > stockWidth;
+                      
+                      // For display, always show in landscape (wider than tall)
+                      const displayWidth = isPortrait ? stockLength : stockWidth;
+                      const displayHeight = isPortrait ? stockWidth : stockLength;
+                      
+                      // Dynamic scaling factors for readability
+                      const maxDimension = Math.max(displayWidth, displayHeight);
+                      const scaleFactor = maxDimension / 1000; // Base scale on typical stock size
+                      const strokeWidth = Math.max(1, scaleFactor * 0.5);
+                      const fontSize = Math.max(12, scaleFactor * 8);
+                      
+                      return (
+                        <>
+                          {isPortrait && (
+                            <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                              📐 Display rotated to landscape for better visibility
+                            </div>
                           )}
-                        </g>
-                      ))}
-                    </svg>
+                          <svg
+                            viewBox={`0 0 ${displayWidth} ${displayHeight}`}
+                            className="w-full border-2 border-gray-400"
+                            style={{ height: '600px', maxWidth: '100%' }}
+                            preserveAspectRatio="xMidYMid meet"
+                          >
+                            {/* Stock plate background */}
+                            <rect
+                              x="0"
+                              y="0"
+                              width={displayWidth}
+                              height={displayHeight}
+                              fill="#f3f4f6"
+                              stroke="#6b7280"
+                              strokeWidth={strokeWidth * 2}
+                            />
+
+                            {/* Nested plates */}
+                            {nestingResults.cutting_plans[selectedPlanIndex].plates.map((plate, idx) => {
+                              // Transform coordinates if rotated for display
+                              let plateX = plate.x;
+                              let plateY = plate.y;
+                              let plateWidth = plate.width;
+                              let plateHeight = plate.height;
+                              
+                              if (isPortrait) {
+                                // Rotate coordinates: swap x/y and adjust for new coordinate system
+                                plateX = plate.y;
+                                plateY = stockWidth - plate.x - plate.width;
+                                plateWidth = plate.height;
+                                plateHeight = plate.width;
+                              }
+                              
+                              // Check if plate is large enough to show text
+                              const minDimensionForText = maxDimension * 0.05; // 5% of max dimension
+                              const showText = plateWidth > minDimensionForText && plateHeight > minDimensionForText;
+                              
+                              return (
+                                <g key={idx}>
+                                  {plate.svg_path ? (
+                                    /* Render actual plate geometry */
+                                    <>
+                                      <path
+                                        d={plate.svg_path}
+                                        fill={getColorForThickness(plate.thickness)}
+                                        fillOpacity="0.7"
+                                        stroke="#1f2937"
+                                        strokeWidth={strokeWidth}
+                                      />
+                                      {showText && (
+                                        <text
+                                          x={plateX + plateWidth / 2}
+                                          y={plateY + plateHeight / 2}
+                                          textAnchor="middle"
+                                          dominantBaseline="middle"
+                                          fill="#111827"
+                                          stroke="#ffffff"
+                                          strokeWidth={fontSize * 0.15}
+                                          paintOrder="stroke"
+                                          fontSize={fontSize}
+                                          fontWeight="bold"
+                                        >
+                                          {plate.name || `${plate.width.toFixed(0)}×${plate.height.toFixed(0)}`}
+                                          {plate.has_complex_geometry && ' ⭐'}
+                                        </text>
+                                      )}
+                                    </>
+                                  ) : (
+                                    /* Render bounding box rectangle */
+                                    <>
+                                      <rect
+                                        x={plateX}
+                                        y={plateY}
+                                        width={plateWidth}
+                                        height={plateHeight}
+                                        fill={getColorForThickness(plate.thickness)}
+                                        fillOpacity="0.7"
+                                        stroke="#1f2937"
+                                        strokeWidth={strokeWidth}
+                                      />
+                                      {/* Rotation indicator */}
+                                      {plate.rotated && (
+                                        <path
+                                          d={`M ${plateX + fontSize * 0.5} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.2} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.0} ${plateY + fontSize * 0.3} M ${plateX + fontSize * 1.2} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.0} ${plateY + fontSize * 0.7}`}
+                                          stroke="#ef4444"
+                                          strokeWidth={strokeWidth * 1.5}
+                                          fill="none"
+                                          strokeLinecap="round"
+                                        />
+                                      )}
+                                      {showText && (
+                                        <text
+                                          x={plateX + plateWidth / 2}
+                                          y={plateY + plateHeight / 2}
+                                          textAnchor="middle"
+                                          dominantBaseline="middle"
+                                          fill="#111827"
+                                          stroke="#ffffff"
+                                          strokeWidth={fontSize * 0.15}
+                                          paintOrder="stroke"
+                                          fontSize={fontSize}
+                                          fontWeight="bold"
+                                        >
+                                          {plate.name || `${plate.width}×${plate.height}`}
+                                          {plate.rotated && ' ↻'}
+                                        </text>
+                                      )}
+                                    </>
+                                  )}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Legend */}
