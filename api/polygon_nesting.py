@@ -132,6 +132,7 @@ def nest_plates_on_multiple_stocks(
 ) -> Tuple[List[NestingResult], List[PlateGeometry]]:
     """
     Nest plates across multiple stock sheets, trying different stock sizes.
+    IMPORTANT: Plates are grouped by thickness - plates of different thickness cannot be on the same sheet!
     
     Args:
         plates: List of PlateGeometry objects to nest
@@ -142,50 +143,76 @@ def nest_plates_on_multiple_stocks(
         Tuple of (list of NestingResults, list of unnested plates)
     """
     results = []
-    remaining_plates = plates.copy()
-    sheet_count = 0
     
-    print(f"[NESTING] Starting nesting for {len(plates)} plates")
+    # Group plates by thickness - CRITICAL!
+    from collections import defaultdict
+    plates_by_thickness = defaultdict(list)
+    for plate in plates:
+        plates_by_thickness[plate.thickness].append(plate)
+    
+    print(f"[NESTING] Starting thickness-aware nesting for {len(plates)} plates")
+    print(f"[NESTING] Thickness groups: {list(plates_by_thickness.keys())}")
+    for thickness, thick_plates in plates_by_thickness.items():
+        print(f"[NESTING]   - {thickness}: {len(thick_plates)} plates")
     print(f"[NESTING] Available stock sizes: {len(stock_configs)}")
     
-    while remaining_plates and sheet_count < max_sheets:
-        best_result = None
-        best_stock_idx = -1
-        
-        # Try each stock configuration
-        for stock_idx, stock in enumerate(stock_configs):
-            result = greedy_nesting(
-                remaining_plates,
-                stock['width'],
-                stock['length']
-            )
-            
-            # Keep the result that fits the most plates
-            if result.placed_plates and (best_result is None or len(result.placed_plates) > len(best_result.placed_plates)):
-                best_result = result
-                best_stock_idx = stock_idx
-        
-        # If we placed some plates, add this sheet
-        if best_result and best_result.placed_plates:
-            best_result.stock_index = best_stock_idx
-            results.append(best_result)
-            
-            # Remove placed plates from remaining
-            placed_ids = {p['plate'].element_id for p in best_result.placed_plates}
-            remaining_plates = [p for p in remaining_plates if p.element_id not in placed_ids]
-            
-            print(f"[NESTING] Sheet {sheet_count + 1}: Placed {len(best_result.placed_plates)} plates, "
-                  f"utilization={best_result.utilization:.1f}%")
-            
-            sheet_count += 1
-        else:
-            # No more plates fit
-            print(f"[NESTING] No more plates fit on available stock sizes")
-            break
+    global_sheet_count = 0
     
-    print(f"[NESTING] Nesting complete: {len(results)} sheets used, {len(remaining_plates)} plates remaining")
+    # Process each thickness group separately
+    for thickness, thickness_plates in plates_by_thickness.items():
+        print(f"\n[NESTING] === Processing thickness {thickness} ({len(thickness_plates)} plates) ===")
+        
+        remaining_plates = thickness_plates.copy()
+        thickness_sheet_count = 0
+        
+        while remaining_plates and thickness_sheet_count < max_sheets:
+            best_result = None
+            best_stock_idx = -1
+            
+            # Try each stock configuration
+            for stock_idx, stock in enumerate(stock_configs):
+                result = greedy_nesting(
+                    remaining_plates,
+                    stock['width'],
+                    stock['length']
+                )
+                
+                # Keep the result that fits the most plates
+                if result.placed_plates and (best_result is None or len(result.placed_plates) > len(best_result.placed_plates)):
+                    best_result = result
+                    best_stock_idx = stock_idx
+            
+            # If we placed some plates, add this sheet
+            if best_result and best_result.placed_plates:
+                best_result.stock_index = best_stock_idx
+                results.append(best_result)
+                
+                # Remove placed plates from remaining
+                placed_ids = {p['plate'].element_id for p in best_result.placed_plates}
+                remaining_plates = [p for p in remaining_plates if p.element_id not in placed_ids]
+                
+                print(f"[NESTING] {thickness} - Sheet {global_sheet_count + 1}: Placed {len(best_result.placed_plates)} plates, "
+                      f"utilization={best_result.utilization:.1f}%")
+                
+                thickness_sheet_count += 1
+                global_sheet_count += 1
+            else:
+                # No more plates of this thickness fit
+                print(f"[NESTING] No more {thickness} plates fit on available stock sizes")
+                break
     
-    return results, remaining_plates
+    # Collect all remaining plates from all thickness groups
+    all_remaining = []
+    for thickness_plates in plates_by_thickness.values():
+        placed_ids = set()
+        for result in results:
+            for placed in result.placed_plates:
+                placed_ids.add(placed['plate'].element_id)
+        all_remaining.extend([p for p in thickness_plates if p.element_id not in placed_ids])
+    
+    print(f"[NESTING] Nesting complete: {len(results)} sheets used, {len(all_remaining)} plates remaining")
+    
+    return results, all_remaining
 
 
 def calculate_nesting_statistics(

@@ -5187,20 +5187,21 @@ async def get_dashboard_details(filename: str):
                         if bolt_count == 0:
                             continue
                         
-                        # Skip stub bolts by comparing expected length from name vs actual length
-                        # Bolt name format: BOLTM{diameter}*{expected_length}
-                        # Example: BOLTM30*90 means diameter 30mm, expected length 90mm
-                        # If actual bolt_length is significantly less than expected, it's just a hole
+                        # STRICT FILTER: Only show bolts where the length in the name matches actual length
+                        # Bolt name format: BOLTM{diameter}*{length}
+                        # Example: BOLTM20*100 means diameter 20mm, length 100mm
+                        # Only display if actual bolt_length equals the length specified in the name
                         if bolt_name and bolt_length:
                             import re
-                            # Parse expected length from bolt name (e.g., "BOLTM30*90" -> 90)
+                            # Parse expected length from bolt name (e.g., "BOLTM20*100" -> 100)
                             match = re.search(r'[*xX](\d+)', bolt_name)
                             if match:
                                 expected_length = float(match.group(1))
-                                # If actual length is less than 50% of expected, it's a hole-only bolt
-                                # Example: BOLTM16*25 expects 25mm but has only 10mm (40%)
-                                #          BOLTM10*15 expects 15mm but has only 3mm (20%)
-                                if bolt_length < (expected_length * 0.5):
+                                # Only keep bolts where actual length matches expected length
+                                # Example: BOLTM20*100 with actual length 100mm -> KEEP
+                                #          BOLTM20*40 with actual length 20mm -> SKIP (hole only)
+                                #          BOLTM20*100 with actual length 50mm -> SKIP (partial/hole)
+                                if bolt_length != expected_length:
                                     continue
                 except:
                     pass
@@ -6293,8 +6294,17 @@ async def generate_plate_nesting(filename: str, request: Request):
                 "statistics": {}
             })
         
-        print(f"\n[PLATE-NESTING] === STARTING OPTIMIZED NESTING ===")
+        # Group plates by thickness - CRITICAL: plates of different thickness cannot be cut from same sheet!
+        from collections import defaultdict
+        plates_by_thickness = defaultdict(list)
+        for plate in plates_to_nest:
+            plates_by_thickness[plate['thickness']].append(plate)
+        
+        print(f"\n[PLATE-NESTING] === STARTING THICKNESS-AWARE NESTING ===")
         print(f"[PLATE-NESTING] Total plates to nest: {len(plates_to_nest)}")
+        print(f"[PLATE-NESTING] Thickness groups: {list(plates_by_thickness.keys())}")
+        for thickness, plates in plates_by_thickness.items():
+            print(f"[PLATE-NESTING]   - {thickness}: {len(plates)} plates")
         print(f"[PLATE-NESTING] Stock sizes available: {len(stock_plates)}")
         
         # Advanced nesting optimization function
@@ -6391,56 +6401,69 @@ async def generate_plate_nesting(filename: str, request: Request):
         
         # Run nesting algorithm for each stock plate size
         nesting_results = []
-        remaining_plates = plates_to_nest.copy()
-        stock_index = 0
+        global_stock_index = 0
         
-        while remaining_plates and stock_index < 100:  # Limit iterations
-            print(f"\n[PLATE-NESTING] === Sheet {stock_index + 1}: {len(remaining_plates)} plates remaining ===")
+        # Process each thickness group separately
+        for thickness, thickness_plates in plates_by_thickness.items():
+            print(f"\n[PLATE-NESTING] === Processing thickness group: {thickness} ({len(thickness_plates)} plates) ===")
             
-            # Try each stock size with optimization
-            best_result = None
-            best_stock_idx = -1
-            best_packed_count = 0
-            best_utilization = 0
+            remaining_plates = thickness_plates.copy()
+            thickness_stock_index = 0
             
-            for idx, stock in enumerate(stock_plates):
-                result, packed_count, utilization = optimize_single_sheet(
-                    remaining_plates, stock, idx
-                )
+            while remaining_plates and thickness_stock_index < 100:  # Limit iterations per thickness
+                print(f"\n[PLATE-NESTING] === {thickness} - Sheet {thickness_stock_index + 1}: {len(remaining_plates)} plates remaining ===")
                 
-                # Choose stock that packs most plates, or best utilization if equal
-                if result and (packed_count > best_packed_count or 
-                              (packed_count == best_packed_count and utilization > best_utilization)):
-                    best_result = result
-                    best_stock_idx = idx
-                    best_packed_count = packed_count
-                    best_utilization = utilization
-            
-            if best_result and best_result['plates']:
-                # Calculate utilization
-                total_plate_area = sum(p['width'] * p['height'] for p in best_result['plates'])
-                stock_area = best_result['stock_width'] * best_result['stock_length']
-                utilization = (total_plate_area / stock_area) * 100 if stock_area > 0 else 0
+                # Try each stock size with optimization
+                best_result = None
+                best_stock_idx = -1
+                best_packed_count = 0
+                best_utilization = 0
                 
-                best_result['utilization'] = round(utilization, 2)
-                best_result['stock_name'] = f"Stock {best_result['stock_index'] + 1}"
+                for idx, stock in enumerate(stock_plates):
+                    result, packed_count, utilization = optimize_single_sheet(
+                        remaining_plates, stock, idx
+                    )
+                    
+                    # Choose stock that packs most plates, or best utilization if equal
+                    if result and (packed_count > best_packed_count or 
+                                  (packed_count == best_packed_count and utilization > best_utilization)):
+                        best_result = result
+                        best_stock_idx = idx
+                        best_packed_count = packed_count
+                        best_utilization = utilization
                 
-                rotated_count = sum(1 for p in best_result['plates'] if p.get('rotated', False))
-                print(f"[PLATE-NESTING] OK Selected: Stock {best_stock_idx + 1}, "
-                      f"{len(best_result['plates'])} plates ({rotated_count} rotated), "
-                      f"{utilization:.1f}% utilization")
+                if best_result and best_result['plates']:
+                    # Calculate utilization
+                    total_plate_area = sum(p['width'] * p['height'] for p in best_result['plates'])
+                    stock_area = best_result['stock_width'] * best_result['stock_length']
+                    utilization = (total_plate_area / stock_area) * 100 if stock_area > 0 else 0
+                    
+                    best_result['utilization'] = round(utilization, 2)
+                    best_result['stock_name'] = f"Stock {global_stock_index + 1}"
+                    best_result['thickness'] = thickness  # Add thickness to result
+                    
+                    # Add thickness to each plate in the result for display
+                    for plate in best_result['plates']:
+                        if 'thickness' not in plate:
+                            plate['thickness'] = thickness
+                    
+                    rotated_count = sum(1 for p in best_result['plates'] if p.get('rotated', False))
+                    print(f"[PLATE-NESTING] OK {thickness} - Stock {best_stock_idx + 1}, "
+                          f"{len(best_result['plates'])} plates ({rotated_count} rotated), "
+                          f"{utilization:.1f}% utilization")
+                    
+                    nesting_results.append(best_result)
+                    global_stock_index += 1
+                    
+                    # Remove packed plates from remaining
+                    packed_ids = set(p['id'] for p in best_result['plates'])
+                    remaining_plates = [p for p in remaining_plates if p['id'] not in packed_ids]
+                else:
+                    # No more plates of this thickness fit
+                    print(f"[PLATE-NESTING] No more {thickness} plates can fit in available stock sizes")
+                    break
                 
-                nesting_results.append(best_result)
-                
-                # Remove packed plates from remaining
-                packed_ids = set(p['id'] for p in best_result['plates'])
-                remaining_plates = [p for p in remaining_plates if p['id'] not in packed_ids]
-            else:
-                # No more plates fit
-                print(f"[PLATE-NESTING] No more plates can fit in available stock sizes")
-                break
-            
-            stock_index += 1
+                thickness_stock_index += 1
         
         # Calculate statistics
         total_plates = len(plates_to_nest)

@@ -316,10 +316,123 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
     }
   }
 
-  const getColorForThickness = (thickness: string): string => {
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-    const hash = thickness.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-    return colors[hash % colors.length]
+  const getColorForPlateName = (plateName: string): string => {
+    // Extract the base plate name (remove the -1, -2, etc. suffix)
+    const baseName = plateName.replace(/-\d+$/, '');
+    
+    // Define a range of distinct grayscale colors
+    const grayscaleColors = [
+      '#d1d5db', // Very light gray
+      '#b4b9c0', // Light gray
+      '#9ca3af', // Medium light gray
+      '#848b96', // Medium gray
+      '#6b7280', // Medium dark gray
+      '#565d68', // Dark gray
+      '#4b5563', // Darker gray
+      '#3d4451', // Very dark gray
+    ];
+    
+    // Simple hash function to pick a consistent color based on plate name
+    const hash = baseName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return grayscaleColors[hash % grayscaleColors.length];
+  }
+
+  // Helper function to create normalized grouping key
+  // Handles cases where width/length might be swapped (e.g., 90x367 vs 367x90)
+  const createPlateGroupKey = (baseName: string, thickness: string, width: number, height: number): string => {
+    // Sort dimensions to normalize (smaller first, larger second)
+    // This ensures plates with swapped dimensions are treated as the same
+    const [dim1, dim2] = [width, height].sort((a, b) => a - b);
+    return `${baseName}_${thickness}_${dim1}_${dim2}`;
+  }
+
+  // State for expandable stock plate groups
+  const [expandedStockGroups, setExpandedStockGroups] = useState<Set<string>>(new Set())
+
+  const toggleStockGroup = (groupKey: string) => {
+    const newExpanded = new Set(expandedStockGroups)
+    if (newExpanded.has(groupKey)) {
+      newExpanded.delete(groupKey)
+    } else {
+      newExpanded.add(groupKey)
+    }
+    setExpandedStockGroups(newExpanded)
+  }
+
+  // Group cutting plans by stock size
+  const groupCuttingPlansByStock = () => {
+    if (!nestingResults || !nestingResults.cutting_plans) return []
+
+    const STEEL_DENSITY = 0.00000785 // kg/mm³
+    
+    const stockGroups = new Map<string, {
+      stock_size: string
+      stock_width: number
+      stock_length: number
+      thickness: string
+      quantity: number
+      sheets: {
+        sheet_index: number
+        utilization: number
+        plates: PlateInPlan[]
+        plates_count: number
+        plates_weight_kg: number
+        waste_m2: number
+        waste_kg: number
+      }[]
+    }>()
+
+    nestingResults.cutting_plans.forEach((plan, index) => {
+      const thickness = plan.plates[0]?.thickness || 'Unknown'
+      const key = `${plan.stock_width}x${plan.stock_length}x${thickness}`
+      
+      // Calculate metrics for this sheet
+      const stockArea_m2 = (plan.stock_width * plan.stock_length) / 1_000_000
+      const usedArea_m2 = plan.plates.reduce((sum, plate) => {
+        const plateArea = plate.actual_area || (plate.width * plate.height)
+        return sum + (plateArea / 1_000_000)
+      }, 0)
+      const waste_m2 = stockArea_m2 - usedArea_m2
+      
+      // Parse thickness value (e.g., "10mm" -> 10)
+      const thicknessValue = parseFloat(thickness.replace(/[^\d.]/g, ''))
+      const stockVolume_mm3 = plan.stock_width * plan.stock_length * thicknessValue
+      const usedVolume_mm3 = plan.plates.reduce((sum, plate) => {
+        const plateArea = plate.actual_area || (plate.width * plate.height)
+        return sum + (plateArea * thicknessValue)
+      }, 0)
+      const waste_kg = (stockVolume_mm3 - usedVolume_mm3) * STEEL_DENSITY
+      
+      const plates_weight_kg = usedVolume_mm3 * STEEL_DENSITY
+
+      if (!stockGroups.has(key)) {
+        stockGroups.set(key, {
+          stock_size: `${plan.stock_width} × ${plan.stock_length} mm`,
+          stock_width: plan.stock_width,
+          stock_length: plan.stock_length,
+          thickness: thickness,
+          quantity: 0,
+          sheets: []
+        })
+      }
+
+      const group = stockGroups.get(key)!
+      group.quantity++
+      group.sheets.push({
+        sheet_index: index + 1,
+        utilization: plan.utilization,
+        plates: plan.plates,
+        plates_count: plan.plates.length,
+        plates_weight_kg: plates_weight_kg,
+        waste_m2: waste_m2,
+        waste_kg: waste_kg
+      })
+    })
+
+    return Array.from(stockGroups.entries()).map(([key, value]) => ({
+      key,
+      ...value
+    }))
   }
 
   const generateBOM = (): BOMItem[] => {
@@ -970,57 +1083,101 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
               </div>
             </div>
 
-            {/* Cutting Plans Visualization */}
+            {/* Cutting Plans - Expandable by Stock Size */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Cutting Plans</h3>
+              <p className="text-sm text-gray-600 mb-4">Organized by stock plate size and thickness</p>
 
-              {/* Plan Selector */}
-              {nestingResults.cutting_plans.length > 1 && (
-                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                  {nestingResults.cutting_plans.map((plan, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setSelectedPlanIndex(index)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                        selectedPlanIndex === index
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Sheet {index + 1} ({plan.utilization}%)
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Selected Plan Visualization */}
-              {nestingResults.cutting_plans[selectedPlanIndex] && (
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-4 flex items-center justify-between">
+              {groupCuttingPlansByStock().map((stockGroup) => (
+                <div key={stockGroup.key} className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+                  {/* Stock Group Header */}
+                  <div 
+                    className="bg-gray-100 px-4 py-3 cursor-pointer hover:bg-gray-200 transition-colors"
+                    onClick={() => toggleStockGroup(stockGroup.key)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <svg
+                          className={`w-5 h-5 transition-transform ${
+                            expandedStockGroups.has(stockGroup.key) ? 'transform rotate-180' : ''
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
                     <div>
                       <h4 className="text-lg font-semibold text-gray-900">
-                        {nestingResults.cutting_plans[selectedPlanIndex].stock_name}
+                            Stock Plate: {stockGroup.stock_size}
                       </h4>
                       <p className="text-sm text-gray-600">
-                        {nestingResults.cutting_plans[selectedPlanIndex].stock_width} × {nestingResults.cutting_plans[selectedPlanIndex].stock_length} mm
-                        <span className="ml-2">•</span>
-                        <span className="ml-2">{nestingResults.cutting_plans[selectedPlanIndex].plates.length} plates</span>
-                        <span className="ml-2">•</span>
-                        <span className="ml-2">{nestingResults.cutting_plans[selectedPlanIndex].utilization}% utilized</span>
-                      </p>
-                      {(nestingResults.cutting_plans[selectedPlanIndex] as any).algorithm && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Algorithm: {(nestingResults.cutting_plans[selectedPlanIndex] as any).algorithm} + {(nestingResults.cutting_plans[selectedPlanIndex] as any).sorting}
-                        </p>
-                      )}
+                            Thickness: {stockGroup.thickness}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-blue-600">{stockGroup.quantity}</p>
+                        <p className="text-sm text-gray-600">sheets</p>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Expanded Stock Group Content */}
+                  {expandedStockGroups.has(stockGroup.key) && (
+                    <div className="p-4 bg-white space-y-6">
+                      {stockGroup.sheets.map((sheet, sheetIdx) => {
+                        const plan = nestingResults.cutting_plans[sheet.sheet_index - 1]
+                        
+                        return (
+                          <div key={sheetIdx} className="border border-gray-300 rounded-lg overflow-hidden">
+                            {/* Sheet Header with Metrics */}
+                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-300">
+                              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                                <div>
+                                  <p className="text-xs text-gray-600">Sheet #</p>
+                                  <p className="text-sm font-bold text-gray-900">{sheet.sheet_index}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Size</p>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {stockGroup.stock_width} × {stockGroup.stock_length}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Thickness</p>
+                                  <p className="text-sm font-medium text-gray-900">{stockGroup.thickness}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Plates</p>
+                                  <p className="text-sm font-bold text-blue-600">{sheet.plates_count}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Plates Weight</p>
+                                  <p className="text-sm font-medium text-green-600">{sheet.plates_weight_kg.toFixed(2)} kg</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Utilization</p>
+                                  <p className="text-sm font-bold text-gray-900">{sheet.utilization}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Waste (m²)</p>
+                                  <p className="text-sm font-medium text-red-600">{sheet.waste_m2.toFixed(3)} m²</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-gray-600">Waste (kg)</p>
+                                  <p className="text-sm font-medium text-red-600">{sheet.waste_kg.toFixed(2)} kg</p>
+                                </div>
+                    </div>
+                  </div>
+
+                            {/* Sheet Content Wrapper */}
+                            <div className="p-4 bg-white space-y-4">
                   {/* SVG Visualization */}
-                  <div className="bg-white rounded-lg p-4">
-                    {(() => {
-                      const stockWidth = nestingResults.cutting_plans[selectedPlanIndex].stock_width;
-                      const stockLength = nestingResults.cutting_plans[selectedPlanIndex].stock_length;
+                              <div>
+                                {plan && (() => {
+                        const stockWidth = plan.stock_width;
+                        const stockLength = plan.stock_length;
                       
                       // Check if we need to rotate to landscape (portrait if length > width)
                       const isPortrait = stockLength > stockWidth;
@@ -1031,36 +1188,113 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                       
                       // Dynamic scaling factors for readability
                       const maxDimension = Math.max(displayWidth, displayHeight);
-                      const scaleFactor = maxDimension / 1000; // Base scale on typical stock size
+                      const scaleFactor = maxDimension / 1000;
                       const strokeWidth = Math.max(1, scaleFactor * 0.5);
-                      const fontSize = Math.max(12, scaleFactor * 8);
+                      const fontSize = Math.max(10, scaleFactor * 6);
+                      
+                      // Function to clean plate name (remove special characters, make readable)
+                      const cleanPlateName = (name: string) => {
+                        if (!name) return '';
+                        // Remove special characters and extra spaces
+                        return name.replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim();
+                      };
                       
                       return (
                         <>
-                          {isPortrait && (
-                            <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-                              📐 Display rotated to landscape for better visibility
-                            </div>
-                          )}
                           <svg
                             viewBox={`0 0 ${displayWidth} ${displayHeight}`}
-                            className="w-full border-2 border-gray-400"
-                            style={{ height: 'auto', maxHeight: '70vh', display: 'block' }}
+                            className="w-full border-2 border-gray-600"
+                            style={{ height: 'auto', maxHeight: '600px', display: 'block', background: '#ffffff' }}
                             preserveAspectRatio="xMinYMin meet"
                           >
-                            {/* Stock plate background */}
+                            {/* Stock plate background - light gray */}
                             <rect
                               x="0"
                               y="0"
                               width={displayWidth}
                               height={displayHeight}
-                              fill="#f3f4f6"
-                              stroke="#6b7280"
+                              fill="#e5e7eb"
+                              stroke="#374151"
                               strokeWidth={strokeWidth * 2}
                             />
 
+                            {/* Create plate-to-row-number and color mapping */}
+                            {(() => {
+                              // Group plates by base name to create row mapping
+                              const plateToRowMap = new Map();
+                              const plateToColorMap = new Map();
+                              const groupedForMapping = new Map();
+                              let rowNum = 1;
+                              
+                              // Define distinct grayscale colors
+                              const grayscaleColors = [
+                                '#e0e0e0', // Very light gray (1)
+                                '#c0c0c0', // Light gray (2)
+                                '#a0a0a0', // Medium light gray (3)
+                                '#909090', // Medium gray (4)
+                                '#707070', // Medium dark gray (5)
+                                '#606060', // Dark gray (6)
+                                '#505050', // Darker gray (7)
+                                '#404040', // Very dark gray (8)
+                                '#d5d5d5', // Alt light 1
+                                '#b5b5b5', // Alt light 2
+                                '#959595', // Alt medium 1
+                                '#858585', // Alt medium 2
+                                '#757575', // Alt dark 1
+                                '#656565', // Alt dark 2
+                                '#555555', // Alt darker 1
+                                '#454545', // Alt darker 2
+                              ];
+                              
+                              plan.plates.forEach((plate, idx) => {
+                                const baseName = plate.name ? plate.name.replace(/-\d+$/, '') : 'N/A';
+                                const key = createPlateGroupKey(baseName, plate.thickness, plate.width, plate.height);
+                                
+                                if (!groupedForMapping.has(key)) {
+                                  groupedForMapping.set(key, rowNum);
+                                  // Assign a unique color to this group
+                                  const colorIndex = (rowNum - 1) % grayscaleColors.length;
+                                  plateToColorMap.set(key, grayscaleColors[colorIndex]);
+                                  rowNum++;
+                                }
+                                
+                                plateToRowMap.set(idx, groupedForMapping.get(key));
+                              });
+                              
+                              return null;
+                            })()}
+
                             {/* Nested plates */}
-                            {nestingResults.cutting_plans[selectedPlanIndex].plates.map((plate, idx) => {
+                            {plan.plates.map((plate, idx) => {
+                              // Get row number and color for this plate
+                              const baseName = plate.name ? plate.name.replace(/-\d+$/, '') : 'N/A';
+                              const key = createPlateGroupKey(baseName, plate.thickness, plate.width, plate.height);
+                              
+                              // Calculate row number by checking how many unique groups came before
+                              let plateRowNumber = 1;
+                              const seenKeys = new Set();
+                              for (let i = 0; i <= idx; i++) {
+                                const p = plan.plates[i];
+                                const bn = p.name ? p.name.replace(/-\d+$/, '') : 'N/A';
+                                const k = createPlateGroupKey(bn, p.thickness, p.width, p.height);
+                                if (!seenKeys.has(k)) {
+                                  if (k === key) {
+                                    break;
+                                  }
+                                  seenKeys.add(k);
+                                  plateRowNumber++;
+                                }
+                              }
+                              
+                              // Define distinct grayscale colors (must match above)
+                              const grayscaleColors = [
+                                '#e0e0e0', '#c0c0c0', '#a0a0a0', '#909090',
+                                '#707070', '#606060', '#505050', '#404040',
+                                '#d5d5d5', '#b5b5b5', '#959595', '#858585',
+                                '#757575', '#656565', '#555555', '#454545',
+                              ];
+                              const plateColor = grayscaleColors[(plateRowNumber - 1) % grayscaleColors.length];
+                              
                               // Transform coordinates if rotated for display
                               let plateX = plate.x;
                               let plateY = plate.y;
@@ -1068,87 +1302,67 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                               let plateHeight = plate.height;
                               
                               if (isPortrait) {
-                                // Rotate coordinates: swap x/y and adjust for new coordinate system
                                 plateX = plate.y;
                                 plateY = stockWidth - plate.x - plate.width;
                                 plateWidth = plate.height;
                                 plateHeight = plate.width;
                               }
                               
-                              // Check if plate is large enough to show text
-                              const minDimensionForText = maxDimension * 0.05; // 5% of max dimension
-                              const showText = plateWidth > minDimensionForText && plateHeight > minDimensionForText;
+                              // Always show text (no minimum size check)
+                              // Calculate appropriate font size for small plates
+                              const minPlateDim = Math.min(plateWidth, plateHeight);
+                              const adaptiveFontSize = Math.max(fontSize * 1.5, minPlateDim * 0.3);
                               
                               return (
                                 <g key={idx}>
                                   {plate.svg_path ? (
-                                    /* Render actual plate geometry */
+                                    /* Render actual plate geometry - GRAYSCALE */
                                     <>
                                       <path
                                         d={plate.svg_path}
-                                        fill={getColorForThickness(plate.thickness)}
-                                        fillOpacity="0.7"
-                                        stroke="#1f2937"
+                                        fill={plateColor}
+                                        fillOpacity="0.8"
+                                        stroke="#000000"
                                         strokeWidth={strokeWidth}
                                       />
-                                      {showText && (
-                                        <text
-                                          x={plateX + plateWidth / 2}
-                                          y={plateY + plateHeight / 2}
-                                          textAnchor="middle"
-                                          dominantBaseline="middle"
-                                          fill="#111827"
-                                          stroke="#ffffff"
-                                          strokeWidth={fontSize * 0.15}
-                                          paintOrder="stroke"
-                                          fontSize={fontSize}
-                                          fontWeight="bold"
-                                        >
-                                          {plate.name || `${plate.width.toFixed(0)}×${plate.height.toFixed(0)}`}
-                                          {plate.has_complex_geometry && ' ⭐'}
-                                        </text>
-                                      )}
+                                      <text
+                                        x={plateX + plateWidth / 2}
+                                        y={plateY + plateHeight / 2}
+                                        textAnchor="middle"
+                                        dominantBaseline="middle"
+                                        fill="#1f2937"
+                                        fontSize={adaptiveFontSize}
+                                        fontWeight="bold"
+                                        fontFamily="Arial, sans-serif"
+                                      >
+                                        {plateRowNumber}
+                                      </text>
                                     </>
                                   ) : (
-                                    /* Render bounding box rectangle */
+                                    /* Render bounding box rectangle - GRAYSCALE */
                                     <>
                                       <rect
                                         x={plateX}
                                         y={plateY}
                                         width={plateWidth}
                                         height={plateHeight}
-                                        fill={getColorForThickness(plate.thickness)}
-                                        fillOpacity="0.7"
-                                        stroke="#1f2937"
+                                        fill={plateColor}
+                                        fillOpacity="0.8"
+                                        stroke="#000000"
                                         strokeWidth={strokeWidth}
                                       />
-                                      {/* Rotation indicator */}
-                                      {plate.rotated && (
-                                        <path
-                                          d={`M ${plateX + fontSize * 0.5} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.2} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.0} ${plateY + fontSize * 0.3} M ${plateX + fontSize * 1.2} ${plateY + fontSize * 0.5} L ${plateX + fontSize * 1.0} ${plateY + fontSize * 0.7}`}
-                                          stroke="#ef4444"
-                                          strokeWidth={strokeWidth * 1.5}
-                                          fill="none"
-                                          strokeLinecap="round"
-                                        />
-                                      )}
-                                      {showText && (
-                                        <text
-                                          x={plateX + plateWidth / 2}
-                                          y={plateY + plateHeight / 2}
-                                          textAnchor="middle"
-                                          dominantBaseline="middle"
-                                          fill="#111827"
-                                          stroke="#ffffff"
-                                          strokeWidth={fontSize * 0.15}
-                                          paintOrder="stroke"
-                                          fontSize={fontSize}
-                                          fontWeight="bold"
-                                        >
-                                          {plate.name || `${plate.width}×${plate.height}`}
-                                          {plate.rotated && ' ↻'}
-                                        </text>
-                                      )}
+                                      <text
+                                        x={plateX + plateWidth / 2}
+                                        y={plateY + plateHeight / 2}
+                                        textAnchor="middle"
+                                        dominantBaseline="middle"
+                                        fill="#1f2937"
+                                        fontSize={adaptiveFontSize}
+                                        fontWeight="bold"
+                                        fontFamily="Arial, sans-serif"
+                                      >
+                                        {plateRowNumber}
+                                      </text>
                                     </>
                                   )}
                                 </g>
@@ -1160,45 +1374,116 @@ export default function PlateNestingTab({ filename, report }: PlateNestingTabPro
                     })()}
                   </div>
 
-                  {/* Legend */}
-                  <div className="mt-4 flex items-center gap-6 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-blue-500 rounded border border-gray-300"></div>
-                      <span>Plate (by thickness)</span>
-                    </div>
-                    {nestingResults.cutting_plans[selectedPlanIndex].plates.some(p => p.rotated) && (
-                      <div className="flex items-center gap-2">
-                        <svg width="16" height="16" viewBox="0 0 16 16" className="text-red-500">
-                          <path d="M 3 3 L 13 3 L 10 1 M 13 3 L 10 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
-                        </svg>
-                        <span>Rotated plate (↻)</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Plates List */}
-                  <div className="mt-4">
-                    <h5 className="text-sm font-semibold text-gray-700 mb-2">Plates in this sheet:</h5>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {nestingResults.cutting_plans[selectedPlanIndex].plates.map((plate, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200 text-sm"
-                        >
-                          <div
-                            className="w-3 h-3 rounded"
-                            style={{ backgroundColor: getColorForThickness(plate.thickness) }}
-                          />
-                          <span className="text-gray-700">
-                            {plate.width}×{plate.height}mm ({plate.thickness})
-                            {plate.rotated && <span className="text-red-500 ml-1">↻</span>}
-                          </span>
+                              {/* Detailed Plates Table */}
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 px-4">Plates in this sheet:</h5>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full">
+                                    <thead>
+                                      <tr className="bg-gray-100 border-b border-gray-300">
+                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">#</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Plate Name</th>
+                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Thickness</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Width (mm)</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Length (mm)</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">m²</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Weight (kg)</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Qty</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Total Weight (kg)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(() => {
+                                        const STEEL_DENSITY = 0.00000785; // kg/mm³
+                                        
+                                        // Group plates by base name (remove -1, -2, -3 suffix)
+                                        const groupedPlates = new Map();
+                                        sheet.plates.forEach((plate, idx) => {
+                                          // Extract base name (remove -1, -2, etc.)
+                                          const baseName = plate.name ? plate.name.replace(/-\d+$/, '') : 'N/A';
+                                          const key = createPlateGroupKey(baseName, plate.thickness, plate.width, plate.height);
+                                          
+                                          if (!groupedPlates.has(key)) {
+                                            // Normalize dimensions (sort them) for consistent display
+                                            const [dim1, dim2] = [plate.width, plate.height].sort((a, b) => a - b);
+                                            groupedPlates.set(key, {
+                                              baseName,
+                                              thickness: plate.thickness,
+                                              width: dim1,
+                                              height: dim2,
+                                              actual_area: plate.actual_area,
+                                              quantity: 0,
+                                              indices: []
+                                            });
+                                          }
+                                          
+                                          const group = groupedPlates.get(key);
+                                          group.quantity += 1;
+                                          group.indices.push(idx + 1);
+                                        });
+                                        
+                                        // Create rows with sequential numbering
+                                        let rowNumber = 1;
+                                        const rows = [];
+                                        
+                                        for (const group of groupedPlates.values()) {
+                                          const plateArea_m2 = (group.actual_area || (group.width * group.height)) / 1_000_000;
+                                          const thicknessValue = parseFloat(group.thickness.replace(/[^\d.]/g, ''));
+                                          const plateVolume_mm3 = (group.actual_area || (group.width * group.height)) * thicknessValue;
+                                          const plateWeight = plateVolume_mm3 * STEEL_DENSITY;
+                                          const totalWeight = plateWeight * group.quantity;
+                                          
+                                          rows.push(
+                                            <tr key={rowNumber} className="border-b border-gray-200 hover:bg-gray-50">
+                                              <td className="px-3 py-2 text-sm text-center text-gray-600 font-mono font-bold">
+                                                {rowNumber}
+                                              </td>
+                                              <td className="px-3 py-2 text-sm text-gray-900">{group.baseName}</td>
+                                              <td className="px-3 py-2 text-sm text-center text-gray-700">{group.thickness}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-gray-900">{group.width.toFixed(1)}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-gray-900">{group.height.toFixed(1)}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-gray-700">{plateArea_m2.toFixed(4)}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-gray-700">{plateWeight.toFixed(2)}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-blue-600 font-medium">{group.quantity}</td>
+                                              <td className="px-3 py-2 text-sm text-right text-gray-900 font-semibold">{totalWeight.toFixed(2)}</td>
+                                            </tr>
+                                          );
+                                          
+                                          rowNumber++;
+                                        }
+                                        
+                                        return rows;
+                                      })()}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                                        <td colSpan={5} className="px-3 py-2 text-sm text-gray-900">Totals</td>
+                                        <td className="px-3 py-2 text-sm text-gray-900 text-right">
+                                          {(() => {
+                                            const totalArea = sheet.plates.reduce((sum, p) => {
+                                              return sum + ((p.actual_area || (p.width * p.height)) / 1_000_000);
+                                            }, 0);
+                                            return totalArea.toFixed(4);
+                                          })()}
+                                        </td>
+                                        <td className="px-3 py-2 text-sm text-gray-900 text-right"></td>
+                                        <td className="px-3 py-2 text-sm text-gray-900 text-right">{sheet.plates.length}</td>
+                                        <td className="px-3 py-2 text-sm text-gray-900 text-right font-bold">
+                                          {sheet.plates_weight_kg.toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
                         </div>
-                      ))}
                     </div>
                   </div>
+                          </div>
+                        );
+                      })}
                 </div>
               )}
+                </div>
+              ))}
             </div>
           </div>
         )}
