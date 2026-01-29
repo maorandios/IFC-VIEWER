@@ -15,17 +15,8 @@ if ($gitStatus) {
     Write-Host "Found uncommitted changes:" -ForegroundColor Yellow
     Write-Host $gitStatus -ForegroundColor Gray
     Write-Host ""
-    
-    $response = Read-Host "Do you want to stash these changes? (Y/n)"
-    if ($response -eq "" -or $response -eq "Y" -or $response -eq "y") {
-        Write-Host "Stashing changes..." -ForegroundColor Yellow
-        git stash push -m "Auto-stash before starting app - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Write-Host "Changes stashed successfully!" -ForegroundColor Green
-    } else {
-        Write-Host "Restoring files to last commit..." -ForegroundColor Yellow
-        git restore .
-        Write-Host "Files restored!" -ForegroundColor Green
-    }
+    Write-Host "INFO: Running with uncommitted changes (this is normal during development)" -ForegroundColor Yellow
+    Write-Host ""
 } else {
     Write-Host "Working directory is clean!" -ForegroundColor Green
 }
@@ -113,7 +104,7 @@ Write-Host ""
 Write-Host "Open your browser and navigate to:" -ForegroundColor Yellow
 Write-Host "  http://localhost:5180" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Press any key to exit this window (servers will keep running)..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-
+Write-Host "Script completed. Servers are running in separate windows." -ForegroundColor Gray
+Write-Host "To stop servers, use: .\stop-app.ps1" -ForegroundColor Gray
+Write-Host ""
 

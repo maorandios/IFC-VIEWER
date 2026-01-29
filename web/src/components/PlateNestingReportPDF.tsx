@@ -1,4 +1,5 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import React from 'react'
+import { Document, Page, Text, View, StyleSheet, Svg, Path, Rect } from '@react-pdf/renderer'
 
 interface PlateInPlan {
   x: number
@@ -8,6 +9,7 @@ interface PlateInPlan {
   name: string
   thickness: string
   id: string
+  svg_path?: string
 }
 
 interface CuttingPlan {
@@ -45,102 +47,68 @@ interface PlateNestingReportPDFProps {
   bom: BOMItem[]
 }
 
+// Helper function to create unique key for plate grouping
+function createPlateGroupKey(baseName: string, thickness: string, width: number, height: number): string {
+  const [dim1, dim2] = [width, height].sort((a, b) => a - b)
+  return `${baseName}|${thickness}|${dim1.toFixed(1)}|${dim2.toFixed(1)}`
+}
+
 const styles = StyleSheet.create({
   page: {
-    padding: 30,
+    padding: 20,
     fontSize: 10,
-    fontFamily: 'Helvetica'
+    fontFamily: 'Helvetica',
+    backgroundColor: '#ffffff'
+  },
+  header: {
+    marginBottom: 15,
+    paddingBottom: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: '#2563eb'
   },
   title: {
-    fontSize: 20,
-    marginBottom: 10,
-    fontWeight: 'bold'
+    fontSize: 18,
+    marginBottom: 4,
+    fontWeight: 'bold',
+    color: '#1e40af'
   },
   subtitle: {
-    fontSize: 12,
-    marginBottom: 20,
-    color: '#666'
-  },
-  section: {
-    marginBottom: 15
-  },
-  sectionTitle: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontWeight: 'bold',
-    color: '#333'
-  },
-  summary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    padding: 10,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 4
-  },
-  summaryItem: {
-    flex: 1
-  },
-  summaryLabel: {
     fontSize: 9,
     color: '#666',
-    marginBottom: 2
+    marginBottom: 8
   },
-  summaryValue: {
-    fontSize: 12,
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4
+  },
+  infoLabel: {
+    fontSize: 9,
+    color: '#666'
+  },
+  infoValue: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#000'
   },
-  table: {
+  svgContainer: {
     marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb'
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#f9fafb',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    padding: 8,
-    fontWeight: 'bold'
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    padding: 8
-  },
-  tableCell: {
-    flex: 1,
-    fontSize: 9
-  },
-  planSection: {
-    marginTop: 15,
-    padding: 10,
-    backgroundColor: '#fafafa',
-    borderRadius: 4
-  },
-  planTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 5
-  },
-  planDetails: {
-    fontSize: 9,
-    color: '#666',
-    marginBottom: 10
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   footer: {
     position: 'absolute',
-    bottom: 30,
-    left: 30,
-    right: 30,
-    textAlign: 'center',
-    color: '#666',
+    bottom: 15,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     fontSize: 8,
+    color: '#666',
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
-    paddingTop: 10
+    paddingTop: 8
   }
 })
 
@@ -156,114 +124,169 @@ export function PlateNestingReportPDF({
     day: 'numeric'
   })
 
+  // Define grayscale colors for plates (must match the app)
+  const grayscaleColors = [
+    '#e0e0e0', '#c0c0c0', '#a0a0a0', '#909090',
+    '#707070', '#606060', '#505050', '#404040',
+    '#d5d5d5', '#b5b5b5', '#959595', '#858585',
+    '#757575', '#656565', '#555555', '#454545',
+  ]
+
+  const getGrayscaleColor = (rowNumber: number): string => {
+    return grayscaleColors[(rowNumber - 1) % grayscaleColors.length]
+  }
+
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <Text style={styles.title}>Plate Nesting Report</Text>
-        <Text style={styles.subtitle}>
-          File: {filename} • Generated: {currentDate}
-        </Text>
+      {cutting_plans.map((plan, planIndex) => {
+        const stockWidth = plan.stock_width
+        const stockLength = plan.stock_length
+        
+        // Check if we need to rotate to landscape
+        const isPortrait = stockLength > stockWidth
+        const displayWidth = isPortrait ? stockLength : stockWidth
+        const displayHeight = isPortrait ? stockWidth : stockLength
+        
+        // Calculate scaling to fit on page
+        // A4 landscape: 841.89 x 595.28 points (11.69" x 8.27" at 72 DPI)
+        const pageWidth = 841.89 - 40 // minus padding
+        const pageHeight = 595.28 - 100 // minus padding and space for header/footer
+        
+        const scaleX = pageWidth / displayWidth
+        const scaleY = pageHeight / displayHeight
+        const scale = Math.min(scaleX, scaleY, 1) // Don't scale up, only down
+        
+        const svgWidth = displayWidth * scale
+        const svgHeight = displayHeight * scale
+        
+        // Calculate stroke width based on scale
+        const maxDim = Math.max(displayWidth, displayHeight)
+        const strokeWidth = Math.max(1, maxDim * 0.001)
+        
+        // Calculate plate row numbers for coloring
+        const plateToRowMap = new Map()
+        const groupedForMapping = new Map()
+        let rowNum = 1
+        
+        plan.plates.forEach((plate, idx) => {
+          const baseName = plate.name ? plate.name.replace(/-\d+$/, '') : 'N/A'
+          const key = createPlateGroupKey(baseName, plate.thickness, plate.width, plate.height)
+          
+          if (!groupedForMapping.has(key)) {
+            groupedForMapping.set(key, rowNum)
+            rowNum++
+          }
+          
+          plateToRowMap.set(idx, groupedForMapping.get(key))
+        })
 
-        {/* Summary Statistics */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <View style={styles.summary}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Total Plates</Text>
-              <Text style={styles.summaryValue}>{statistics.total_plates}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Stock Sheets</Text>
-              <Text style={styles.summaryValue}>{statistics.stock_sheets_used}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Utilization</Text>
-              <Text style={styles.summaryValue}>{statistics.overall_utilization}%</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Waste</Text>
-              <Text style={styles.summaryValue}>{statistics.waste_percentage}%</Text>
-            </View>
-          </View>
-
-          <View style={styles.summary}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Total Area</Text>
-              <Text style={styles.summaryValue}>{statistics.total_stock_area_m2} m²</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Used Area</Text>
-              <Text style={styles.summaryValue}>{statistics.total_used_area_m2} m²</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Waste Area</Text>
-              <Text style={styles.summaryValue}>{statistics.waste_area_m2} m²</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Bill of Materials */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bill of Materials (BOM)</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.tableCell, { flex: 2 }]}>Dimensions (mm)</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>Thickness</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>Quantity</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>Area (m²)</Text>
-            </View>
-            {bom.map((item, index) => (
-              <View key={index} style={styles.tableRow}>
-                <Text style={[styles.tableCell, { flex: 2 }]}>{item.dimensions}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{item.thickness}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{item.quantity}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{item.area_m2.toFixed(3)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Cutting Plans Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cutting Plans</Text>
-          {cutting_plans.map((plan, index) => (
-            <View key={index} style={styles.planSection}>
-              <Text style={styles.planTitle}>
-                {plan.stock_name} - {plan.stock_width} × {plan.stock_length} mm
-              </Text>
-              <Text style={styles.planDetails}>
-                Plates: {plan.plates.length} • Utilization: {plan.utilization}%
-              </Text>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.tableCell, { flex: 2 }]}>Plate</Text>
-                  <Text style={[styles.tableCell, { flex: 1 }]}>Dimensions</Text>
-                  <Text style={[styles.tableCell, { flex: 1 }]}>Thickness</Text>
-                  <Text style={[styles.tableCell, { flex: 1 }]}>Position</Text>
+        return (
+          <Page key={planIndex} size="A4" orientation="landscape" style={styles.page}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.title}>Plate Nesting Report - Sheet {planIndex + 1} of {cutting_plans.length}</Text>
+              <Text style={styles.subtitle}>File: {filename} • Generated: {currentDate}</Text>
+              
+              <View style={styles.infoRow}>
+                <View>
+                  <Text style={styles.infoLabel}>Stock Size:</Text>
+                  <Text style={styles.infoValue}>{stockWidth} × {stockLength} mm</Text>
                 </View>
-                {plan.plates.map((plate, plateIdx) => (
-                  <View key={plateIdx} style={styles.tableRow}>
-                    <Text style={[styles.tableCell, { flex: 2 }]}>{plate.name}</Text>
-                    <Text style={[styles.tableCell, { flex: 1 }]}>
-                      {plate.width}×{plate.height}
-                    </Text>
-                    <Text style={[styles.tableCell, { flex: 1 }]}>{plate.thickness}</Text>
-                    <Text style={[styles.tableCell, { flex: 1 }]}>
-                      ({Math.round(plate.x)}, {Math.round(plate.y)})
-                    </Text>
-                  </View>
-                ))}
+                <View>
+                  <Text style={styles.infoLabel}>Plates:</Text>
+                  <Text style={styles.infoValue}>{plan.plates.length}</Text>
+                </View>
+                <View>
+                  <Text style={styles.infoLabel}>Utilization:</Text>
+                  <Text style={styles.infoValue}>{plan.utilization.toFixed(1)}%</Text>
+                </View>
+                <View>
+                  <Text style={styles.infoLabel}>Overall Efficiency:</Text>
+                  <Text style={styles.infoValue}>{statistics.overall_utilization.toFixed(1)}%</Text>
+                </View>
               </View>
             </View>
-          ))}
-        </View>
 
-        {/* Footer */}
-        <Text style={styles.footer}>
-          Generated on {currentDate} • Page 1
-        </Text>
-      </Page>
+            {/* SVG Visualization */}
+            <View style={styles.svgContainer}>
+              <Svg
+                width={svgWidth}
+                height={svgHeight}
+                viewBox={`0 0 ${displayWidth} ${displayHeight}`}
+                style={{ border: '2px solid #374151' }}
+              >
+                {/* Stock plate background */}
+                <Rect
+                  x={0}
+                  y={0}
+                  width={displayWidth}
+                  height={displayHeight}
+                  fill="#e5e7eb"
+                  stroke="#374151"
+                  strokeWidth={strokeWidth * 2}
+                />
+
+                {/* Nested plates */}
+                {plan.plates.map((plate, idx) => {
+                  const rowNumber = plateToRowMap.get(idx) || 1
+                  const plateColor = getGrayscaleColor(rowNumber)
+                  
+                  // Transform coordinates if rotated for display
+                  let plateX = plate.x
+                  let plateY = plate.y
+                  let plateWidth = plate.width
+                  let plateHeight = plate.height
+                  
+                  if (isPortrait) {
+                    plateX = plate.y
+                    plateY = stockWidth - plate.x - plate.width
+                    plateWidth = plate.height
+                    plateHeight = plate.width
+                  }
+                  
+                  // Calculate adaptive font size
+                  const minPlateDim = Math.min(plateWidth, plateHeight)
+                  const fontSize = Math.max(maxDim * 0.015, minPlateDim * 0.3)
+                  
+                  return (
+                    <React.Fragment key={idx}>
+                      {plate.svg_path ? (
+                        // Render actual plate geometry
+                        <Path
+                          d={plate.svg_path}
+                          fill={plateColor}
+                          fillOpacity={0.8}
+                          stroke="#000000"
+                          strokeWidth={strokeWidth}
+                        />
+                      ) : (
+                        // Render bounding box rectangle
+                        <Rect
+                          x={plateX}
+                          y={plateY}
+                          width={plateWidth}
+                          height={plateHeight}
+                          fill={plateColor}
+                          fillOpacity={0.8}
+                          stroke="#000000"
+                          strokeWidth={strokeWidth}
+                        />
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </Svg>
+            </View>
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text>IFC2026 Plate Nesting System</Text>
+              <Text>Sheet {planIndex + 1} / {cutting_plans.length}</Text>
+              <Text>{currentDate}</Text>
+            </View>
+          </Page>
+        )
+      })}
     </Document>
   )
 }
