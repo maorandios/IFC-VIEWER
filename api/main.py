@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
@@ -12,6 +12,7 @@ import os
 import asyncio
 import re
 import traceback
+from threading import Lock
 
 # Try to import ifcopenshell.geom if available (for geometry operations)
 try:
@@ -77,6 +78,10 @@ GLTF_DIR = STORAGE_DIR / "gltf"
 IFC_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 GLTF_DIR.mkdir(parents=True, exist_ok=True)
+
+# Analysis status tracking (in-memory, for async analysis)
+analysis_status: Dict[str, Dict[str, Any]] = {}
+analysis_status_lock = Lock()
 
 # Steel element types
 STEEL_TYPES = {"IfcBeam", "IfcColumn", "IfcMember", "IfcPlate"}
@@ -806,9 +811,47 @@ def analyze_ifc(file_path: Path) -> Dict[str, Any]:
     }
 
 
+def analyze_ifc_background(safe_filename: str, file_path: Path):
+    """Background task to analyze IFC file."""
+    try:
+        with analysis_status_lock:
+            analysis_status[safe_filename] = {
+                "status": "processing",
+                "progress": 0,
+                "error": None
+            }
+        
+        print(f"[BACKGROUND] Starting analysis for {safe_filename}")
+        report = analyze_ifc(file_path)
+        
+        # Save report
+        report_path = REPORTS_DIR / f"{safe_filename}.json"
+        with open(report_path, "w", encoding='utf-8') as f:
+            json.dump(report, f, indent=2)
+        
+        with analysis_status_lock:
+            analysis_status[safe_filename] = {
+                "status": "completed",
+                "progress": 100,
+                "error": None,
+                "report": report
+            }
+        
+        print(f"[BACKGROUND] Analysis completed for {safe_filename}")
+    except Exception as e:
+        print(f"[BACKGROUND] Error analyzing {safe_filename}: {e}")
+        import traceback
+        traceback.print_exc()
+        with analysis_status_lock:
+            analysis_status[safe_filename] = {
+                "status": "error",
+                "progress": 0,
+                "error": str(e)
+            }
+
 @app.post("/api/upload")
-async def upload_ifc(file: UploadFile = File(...)):
-    """Upload an IFC file."""
+async def upload_ifc(file: UploadFile = File(...), background_tasks: BackgroundTasks = BackgroundTasks()):
+    """Upload an IFC file - returns immediately, analysis runs in background."""
     print("=" * 60)
     print("[UPLOAD] ===== UPLOAD ENDPOINT CALLED =====")
     print(f"[UPLOAD] File: {file.filename}")
@@ -829,107 +872,76 @@ async def upload_ifc(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="File is empty")
         
         print(f"[UPLOAD] About to write file: {file_path}")
-        print(f"[UPLOAD] File path type: {type(file_path)}, exists: {file_path.parent.exists()}")
         try:
             with open(file_path, "wb") as f:
                 f.write(content)
             print(f"[UPLOAD] File saved successfully: {file_path}, size: {len(content)} bytes")
         except Exception as write_error:
             print(f"[UPLOAD] ERROR writing file: {write_error}")
-            print(f"[UPLOAD] Error type: {type(write_error)}")
             import traceback
             traceback.print_exc()
             raise
         
-        # Analyze IFC
-        print(f"[UPLOAD] About to call analyze_ifc for: {file_path}")
-        try:
-            report = analyze_ifc(file_path)
-            print(f"[UPLOAD] analyze_ifc completed successfully. Report has {len(report.get('profiles', []))} profiles")
-            
-            # Save report
-            report_path = REPORTS_DIR / f"{safe_filename}.json"
-            print(f"[UPLOAD] About to save report: {report_path}")
-            try:
-                with open(report_path, "w", encoding='utf-8') as f:
-                    json.dump(report, f, indent=2)
-                print(f"[UPLOAD] Report saved successfully: {report_path}")
-            except Exception as report_error:
-                print(f"[UPLOAD] ERROR saving report: {report_error}")
-                print(f"[UPLOAD] Error type: {type(report_error)}")
-                import traceback
-                traceback.print_exc()
-                raise
-            
-            # Convert to glTF synchronously (for now, to catch errors)
-            gltf_filename = f"{Path(safe_filename).stem}.glb"
-            gltf_path = GLTF_DIR / gltf_filename
-            
-            gltf_available = False
-            conversion_error = None
-            
-            # Always force regeneration: delete existing glb if present
-            if gltf_path.exists():
-                try:
-                    gltf_path.unlink()
-                    print(f"[UPLOAD] Existing glTF removed to force regeneration: {gltf_path}")
-                except Exception as e:
-                    print(f"[UPLOAD] Warning: could not delete existing glTF {gltf_path}: {e}")
-            
-            # Try conversion, but don't block upload if it fails
-            try:
-                print(f"[UPLOAD] Starting glTF conversion for {safe_filename}...")
-                convert_ifc_to_gltf(file_path, gltf_path)
-                gltf_available = gltf_path.exists()
-                if gltf_available:
-                    print(f"[UPLOAD] glTF conversion completed: {gltf_path}")
-                else:
-                    print(f"[UPLOAD] WARNING: glTF conversion completed but file not found: {gltf_path}")
-            except Exception as e:
-                conversion_error = str(e)
-                print(f"[UPLOAD] ERROR: glTF conversion failed: {e}")
-                import traceback
-                traceback.print_exc()
-                # Don't fail the upload, just log the error
-            
-            # Log profiles in the report being returned
-            print(f"[UPLOAD] Report contains {len(report.get('profiles', []))} profiles:")
-            for profile in report.get('profiles', []):
-                print(f"[UPLOAD]   - {profile.get('profile_name')} (type: {profile.get('element_type', 'N/A')}, pieces: {profile.get('piece_count', 0)})")
-            
-            response_data = {
-                "filename": safe_filename,  # Return sanitized filename
-                "original_filename": file.filename,  # Keep original for display
-                "report": report,
-                "gltf_available": bool(gltf_available),  # Ensure it's always a boolean
-                "gltf_path": f"/api/gltf/{gltf_filename}",  # Always include this
+        # Initialize analysis status
+        with analysis_status_lock:
+            analysis_status[safe_filename] = {
+                "status": "pending",
+                "progress": 0,
+                "error": None
             }
-            if conversion_error:
-                response_data["conversion_error"] = str(conversion_error)
-            
-            print(f"[UPLOAD] ===== UPLOAD COMPLETE =====")
-            
-            return JSONResponse(response_data)
-        except Exception as e:
-            # Clean up file on error
-            if file_path.exists():
-                file_path.unlink()
-            error_msg = f"Error analyzing IFC: {str(e)}"
-            print(f"[UPLOAD] {error_msg}")
-            import traceback
-            print(f"[UPLOAD] Full traceback:")
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Failed to analyze IFC: {str(e)}")
+        
+        # Start background analysis task
+        background_tasks.add_task(analyze_ifc_background, safe_filename, file_path)
+        print(f"[UPLOAD] Background analysis started for {safe_filename}")
+        
+        # Return immediately with empty report - frontend will poll for updates
+        response_data = {
+            "filename": safe_filename,
+            "original_filename": file.filename,
+            "report": None,  # Will be available via status endpoint
+            "analysis_status": "pending",
+            "gltf_available": False,  # No GLTF conversion needed - using web-ifc
+            "gltf_path": f"/api/gltf/{Path(safe_filename).stem}.glb",
+        }
+        
+        print(f"[UPLOAD] ===== UPLOAD COMPLETE (RETURNING IMMEDIATELY) =====")
+        
+        return JSONResponse(response_data)
+        
     except HTTPException:
         raise
     except Exception as e:
         error_msg = f"Upload failed: {str(e)}"
         print(f"[UPLOAD] {error_msg}")
         import traceback
-        print(f"[UPLOAD] Full traceback:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+
+@app.get("/api/analysis-status/{filename}")
+async def get_analysis_status(filename: str):
+    """Get analysis status for a specific IFC file."""
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    
+    with analysis_status_lock:
+        status = analysis_status.get(decoded_filename, {
+            "status": "not_found",
+            "progress": 0,
+            "error": None
+        })
+    
+    # If completed, try to load report from file
+    if status.get("status") == "completed" and "report" not in status:
+        report_path = REPORTS_DIR / f"{decoded_filename}.json"
+        if report_path.exists():
+            try:
+                with open(report_path, "r") as f:
+                    status["report"] = json.load(f)
+            except Exception as e:
+                print(f"[STATUS] Error loading report: {e}")
+    
+    return JSONResponse(status)
 
 @app.get("/api/report/{filename}")
 async def get_report(filename: str):
@@ -5028,6 +5040,55 @@ async def get_assembly_parts(filename: str, product_id: int = None, assembly_mar
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get assembly parts: {str(e)}")
 
+
+@app.get("/api/element/{filename}/{express_id}")
+async def get_element(filename: str, express_id: int):
+    """Get element data for FastIFCViewer (simplified version)."""
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    file_path = IFC_DIR / decoded_filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="IFC file not found")
+    
+    try:
+        resolved_path = file_path.resolve()
+        ifc_file = ifcopenshell.open(str(resolved_path))
+        
+        try:
+            entity = ifc_file.by_id(express_id)
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"Entity with ID {express_id} not found: {str(e)}")
+        
+        element_type = entity.is_a()
+        
+        # Get basic attributes
+        basic_attributes = {
+            "Name": getattr(entity, 'Name', None) or '',
+            "Tag": getattr(entity, 'Tag', None) or '',
+            "Description": getattr(entity, 'Description', None) or ''
+        }
+        
+        # Get property sets
+        property_sets = {}
+        try:
+            psets = ifcopenshell.util.element.get_psets(entity)
+            property_sets = {name: dict(props) for name, props in psets.items()}
+        except Exception as e:
+            print(f"[ELEMENT] Error getting property sets: {e}")
+        
+        return JSONResponse({
+            "product_id": express_id,
+            "element_type": element_type,
+            "basic_attributes": basic_attributes,
+            "property_sets": property_sets
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get element data: {str(e)}")
 
 @app.get("/api/element-full/{element_id}")
 async def get_element_full(element_id: int, filename: str):

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import FileUpload from './components/FileUpload'
-import IFCViewer from './components/IFCViewer'
+import FastIFCViewer from './components/FastIFCViewer'
 import SteelReports from './components/SteelReports'
 import NestingReport from './components/NestingReport'
 import Dashboard from './components/Dashboard'
@@ -47,9 +47,8 @@ function App() {
   // Always start with no file - user must upload
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [report, setReport] = useState<SteelReport | null>(null)
-  const [gltfPath, setGltfPath] = useState<string | undefined>(undefined)
-  const [gltfAvailable, setGltfAvailable] = useState<boolean>(false)
   const [loading, setLoading] = useState(false)
+  const [analysisStatus, setAnalysisStatus] = useState<'pending' | 'processing' | 'completed' | 'error'>('pending')
   const [filters, setFilters] = useState<FilterState>(savedState?.filters || {
     profileTypes: new Set<string>(),
     plateThicknesses: new Set<string>(),
@@ -77,22 +76,51 @@ function App() {
     }
   }, [filters, activeTab])
 
-  const handleFileUploaded = (filename: string, reportData: SteelReport, gltfPath?: string, gltfAvailable?: boolean) => {
+  const handleFileUploaded = (filename: string, reportData: SteelReport | null, gltfPath?: string, gltfAvailable?: boolean) => {
     // Always clear nesting report when new file is uploaded
     setNestingReport(null)
     
     setCurrentFile(filename)
     setReport(reportData)
-    setGltfPath(gltfPath)
-    setGltfAvailable(gltfAvailable || false)
+    setAnalysisStatus(reportData ? 'completed' : 'pending')
+    
     // Reset filters when new file is uploaded
     setFilters({
       profileTypes: new Set(),
       plateThicknesses: new Set(),
       assemblyMarks: new Set()
     })
-    setActiveTab('dashboard')  // Reset to dashboard tab
+    setActiveTab('model')  // Go to model tab to see fast loading
   }
+
+  // Poll for analysis status when report is null
+  useEffect(() => {
+    if (!currentFile || report !== null) return
+
+    const pollAnalysisStatus = async () => {
+      try {
+        const response = await fetch(`/api/analysis-status/${encodeURIComponent(currentFile)}`)
+        if (!response.ok) return
+        
+        const status = await response.json()
+        setAnalysisStatus(status.status)
+        
+        if (status.status === 'completed' && status.report) {
+          setReport(status.report)
+        } else if (status.status === 'error') {
+          console.error('Analysis error:', status.error)
+        }
+      } catch (err) {
+        console.error('Error polling analysis status:', err)
+      }
+    }
+
+    // Poll immediately, then every 2 seconds
+    pollAnalysisStatus()
+    const interval = setInterval(pollAnalysisStatus, 2000)
+
+    return () => clearInterval(interval)
+  }, [currentFile, report])
 
   const handleNestingReportChange = (report: NestingReportType | null) => {
     setNestingReport(report)
@@ -244,10 +272,8 @@ function App() {
             {activeTab === 'model' && (
               <div className="flex-1 flex overflow-hidden">
                 <div className="flex-1 border-r relative">
-                  <IFCViewer 
-                    filename={currentFile} 
-                    gltfPath={gltfPath} 
-                    gltfAvailable={gltfAvailable}
+                  <FastIFCViewer 
+                    filename={currentFile || ''} 
                     enableMeasurement={true}
                     enableClipping={true}
                     filters={filters}
@@ -255,12 +281,22 @@ function App() {
                   />
                 </div>
                 <div className="w-96 overflow-y-auto">
-                  <SteelReports 
-                    report={report} 
-                    filename={currentFile}
-                    filters={filters}
-                    setFilters={setFilters}
-                  />
+                  {analysisStatus === 'pending' || analysisStatus === 'processing' ? (
+                    <div className="p-4 text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                      <p className="text-sm text-gray-600">
+                        {analysisStatus === 'pending' ? 'Waiting for analysis...' : 'Analyzing IFC file...'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Report will appear here when ready</p>
+                    </div>
+                  ) : (
+                    <SteelReports 
+                      report={report} 
+                      filename={currentFile}
+                      filters={filters}
+                      setFilters={setFilters}
+                    />
+                  )}
                 </div>
               </div>
             )}

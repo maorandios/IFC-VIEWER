@@ -50,9 +50,16 @@ export default function FileUpload({ onUpload, loading, setLoading }: FileUpload
       console.log('Conversion error:', data.conversion_error)
       
       // Handle different response formats
-      if (data.filename && data.report) {
-        // Expected format: {filename, report, gltf_path, gltf_available}
-        onUpload(data.filename, data.report, data.gltf_path, data.gltf_available)
+      if (data.filename) {
+        // New async format: {filename, report: null, analysis_status: 'pending'}
+        // Report will be loaded via polling in App.tsx
+        if (data.report) {
+          // Report is ready immediately
+          onUpload(data.filename, data.report, data.gltf_path, data.gltf_available)
+        } else {
+          // Report is null - analysis running in background, will be polled
+          onUpload(data.filename, null, data.gltf_path, data.gltf_available)
+        }
       } else if (data.filename && data.file_id) {
         // Alternative format: {file_id, filename} - fetch report separately
         console.warn('Received file_id format, fetching report separately')
@@ -62,14 +69,16 @@ export default function FileUpload({ onUpload, loading, setLoading }: FileUpload
             const report = await reportResponse.json()
             onUpload(data.filename, report)
           } else {
-            throw new Error('File uploaded but report not available')
+            // Report not ready yet - start with null, will be polled
+            onUpload(data.filename, null)
           }
         } catch (reportError) {
           console.error('Error fetching report:', reportError)
-          throw new Error('File uploaded but failed to get report. Please try again.')
+          // Still allow upload to proceed - report will be polled
+          onUpload(data.filename, null)
         }
       } else {
-        throw new Error('Invalid response from server: missing filename or report')
+        throw new Error('Invalid response from server: missing filename')
       }
     } catch (err) {
       console.error('Upload error:', err)
