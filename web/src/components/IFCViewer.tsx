@@ -12,11 +12,12 @@ interface IFCViewerProps {
   enableClipping?: boolean // Feature flag for clipping planes
   filters?: FilterState
   report?: any // Report data to get plate thickness information
+  isVisible?: boolean // Whether the viewer is currently visible (for CSS hiding support)
 }
 
 type ClipPlaneKey = 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back'
 
-export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, enableMeasurement = false, enableClipping = false, filters, report }: IFCViewerProps) {
+export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, enableMeasurement = false, enableClipping = false, filters, report, isVisible = true }: IFCViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -138,6 +139,7 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
   }, [selectionMode])
   const [isLoading, setIsLoading] = useState(false)
   const [conversionStatus, setConversionStatus] = useState<string>('')
+  const isLoadingRef = useRef<boolean>(false) // Guard to prevent multiple simultaneous loads
   
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -183,6 +185,17 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
       return
     }
 
+    // Wait for container to have dimensions (not hidden)
+    if (containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) {
+      console.log('[IFCViewer] Container has zero dimensions, waiting for visibility...')
+      setLoadError(null)
+      setIsLoading(false)
+      return
+    }
+
+    console.log('[IFCViewer] Initializing Three.js scene')
+    console.log('[IFCViewer] Container dimensions:', containerRef.current.clientWidth, 'x', containerRef.current.clientHeight)
+
     // Create scene
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf0f0f0)
@@ -210,6 +223,7 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
     renderer.setClearColor(0xf0f0f0)
+    console.log('[IFCViewer] Renderer created and sized to:', containerRef.current.clientWidth, 'x', containerRef.current.clientHeight)
     renderer.outputEncoding = THREE.sRGBEncoding
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.2 // Slightly increased for better visibility
@@ -1010,6 +1024,14 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
         return
       }
 
+      // Prevent multiple simultaneous loads
+      if (isLoadingRef.current) {
+        console.log('[IFCViewer] Already loading, skipping duplicate loadGLTF call')
+        return
+      }
+
+      console.log('[IFCViewer] Starting loadGLTF, filename:', filename, 'gltfPath:', gltfPath, 'gltfAvailable:', gltfAvailable)
+      isLoadingRef.current = true
       setIsLoading(true)
       setLoadError(null)
       setConversionStatus('')
@@ -1017,6 +1039,7 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
       try {
         // Determine glTF path - use gltfPath from upload response if available
         const gltfFilename = gltfPath || `/api/gltf/${filename.replace('.ifc', '.glb').replace('.IFC', '.glb')}`
+        console.log('[IFCViewer] glTF filename to load:', gltfFilename)
         
         // Check if glTF file exists (skip check if we know it's available from upload)
         let gltfExists = gltfAvailable
@@ -1081,8 +1104,15 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
         setConversionStatus('Loading 3D model...')
 
         // Load the glTF file
+        console.log('[IFCViewer] About to load glTF file:', gltfFilename)
         const loader = new GLTFLoader()
         const gltf = await loader.loadAsync(gltfFilename)
+        console.log('[IFCViewer] glTF loaded successfully, scene:', gltf.scene)
+        console.log('[IFCViewer] Scene has', gltf.scene.children.length, 'children')
+
+        // Declare edge-related arrays at outer scope so they're accessible later
+        const edgeLines: THREE.LineSegments[] = []
+        const meshesToProcessForEdges: any[] = []  // Store meshes for async edge generation
 
         // Add model to scene
         if (gltf.scene) {
@@ -1110,6 +1140,9 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
           // Get center and size
           const center = box.getCenter(new THREE.Vector3())
           const size = box.getSize(new THREE.Vector3())
+          console.log('[IFCViewer] Model bounding box - Center:', center, 'Size:', size)
+          console.log('[IFCViewer] Model bounds - Min:', box.min, 'Max:', box.max)
+          
           modelBoundsRef.current = {
             min: box.min.clone(),
             max: box.max.clone(),
@@ -1119,6 +1152,7 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
           
           // Apply any additional per-mesh setup below
           const maxDim = Math.max(size.x, size.y, size.z)
+          console.log('[IFCViewer] Max dimension:', maxDim)
           
           if (maxDim > 0) {
             // Calculate appropriate camera distance
@@ -1161,12 +1195,14 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
             )
             
             camera.position.copy(cameraPos)
+            console.log('[IFCViewer] Camera positioned at:', cameraPos)
             
             // CRITICAL: Ensure Y is always up (ground-up coordinate system)
             camera.up.set(0, 1, 0)
             
             // Set controls target to model center
             controls.target.copy(center)
+            console.log('[IFCViewer] Camera target set to:', center)
             
             // Make sure camera looks at center (this respects the up vector)
             camera.lookAt(center)
@@ -1182,7 +1218,6 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
           }
 
           // Simplified material processing - let Three.js handle default colors, only override fasteners
-          const edgeLines: THREE.LineSegments[] = []
 
           gltf.scene.traverse((child: any) => {
             if (child.isMesh) {
@@ -1329,38 +1364,8 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
                 })
               }
               
-              // Add edge lines for better geometry definition
-              // Use element color but slightly darker
-              try {
-                const edgesGeometry = new THREE.EdgesGeometry(child.geometry, 10)
-                
-                // Get the material color and make it darker
-                const currentMaterial = Array.isArray(child.material) ? child.material[0] : child.material
-                const elementColor = currentMaterial?.color || new THREE.Color(0x8888aa)
-                // Make it darker by lerping with black (80% towards black = much darker)
-                const black = new THREE.Color(0x000000)
-                const darkerColor = elementColor.clone().lerp(black, 0.8)
-                
-                const edgesMaterial = new THREE.LineBasicMaterial({ 
-                  color: darkerColor,
-                  linewidth: 1.5,
-                  opacity: 0.8,
-                  transparent: true
-                })
-                const edgeLine = new THREE.LineSegments(edgesGeometry, edgesMaterial)
-                edgeLine.name = `${child.name || 'mesh'}_edges`
-                edgeLine.castShadow = false
-                edgeLine.receiveShadow = false
-                edgeLine.visible = true
-                
-                if (!child.userData) child.userData = {}
-                child.userData.edgeLine = edgeLine
-                edgeLines.push(edgeLine)
-                
-                child.add(edgeLine)
-              } catch (e) {
-                // Ignore edge creation errors
-              }
+              // Store mesh for async edge generation (don't generate edges synchronously)
+              meshesToProcessForEdges.push(child)
             }
           })
 
@@ -1521,14 +1526,73 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
           setupClickSelection(gltf.scene, setSelectedElement)
         }
 
+        console.log('[IFCViewer] Model loaded and displayed successfully')
         setIsLoading(false)
         setConversionStatus('')
+        isLoadingRef.current = false
+        console.log('[IFCViewer] Loading state cleared, overlay should be hidden')
+        
+        // Generate edge lines asynchronously to avoid blocking UI
+        if (meshesToProcessForEdges.length > 0) {
+          setTimeout(() => {
+            console.log('[IFCViewer] Starting asynchronous edge generation for', meshesToProcessForEdges.length, 'meshes')
+            let processedCount = 0
+            const CHUNK_SIZE = 50  // Process 50 meshes at a time to avoid blocking
+            
+            const processChunk = () => {
+              const endIndex = Math.min(processedCount + CHUNK_SIZE, meshesToProcessForEdges.length)
+              
+              for (let i = processedCount; i < endIndex; i++) {
+                const child = meshesToProcessForEdges[i]
+                try {
+                  const edgesGeometry = new THREE.EdgesGeometry(child.geometry, 10)
+                  const currentMaterial = Array.isArray(child.material) ? child.material[0] : child.material
+                  const elementColor = currentMaterial?.color || new THREE.Color(0x8888aa)
+                  const black = new THREE.Color(0x000000)
+                  const darkerColor = elementColor.clone().lerp(black, 0.8)
+                  
+                  const edgesMaterial = new THREE.LineBasicMaterial({ 
+                    color: darkerColor,
+                    linewidth: 1.5,
+                    opacity: 0.8,
+                    transparent: true
+                  })
+                  const edgeLine = new THREE.LineSegments(edgesGeometry, edgesMaterial)
+                  edgeLine.name = `${child.name || 'mesh'}_edges`
+                  edgeLine.castShadow = false
+                  edgeLine.receiveShadow = false
+                  edgeLine.visible = true
+                  
+                  if (!child.userData) child.userData = {}
+                  child.userData.edgeLine = edgeLine
+                  edgeLines.push(edgeLine)
+                  child.add(edgeLine)
+                } catch (e) {
+                  // Ignore edge creation errors
+                }
+              }
+              
+              processedCount = endIndex
+              
+              if (processedCount < meshesToProcessForEdges.length) {
+                // Process next chunk on next animation frame
+                requestAnimationFrame(processChunk)
+              } else {
+                console.log('[IFCViewer] Edge generation complete for all', processedCount, 'meshes')
+              }
+            }
+            
+            // Start processing after a small delay to let the model render first
+            requestAnimationFrame(processChunk)
+          }, 100)
+        }
       } catch (error) {
-        console.error('Error loading glTF:', error)
+        console.error('[IFCViewer] Error loading glTF:', error)
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         setLoadError(`Failed to load 3D model: ${errorMessage}`)
         setIsLoading(false)
         setConversionStatus('')
+        isLoadingRef.current = false
       }
     }
 
@@ -1549,6 +1613,11 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
     const animate = () => {
       animationId = requestAnimationFrame(animate)
       frameCount++
+      
+      // Log first few frames to verify animation is running
+      if (frameCount <= 3) {
+        console.log('[IFCViewer] Animation frame', frameCount, '- Scene children:', scene.children.length, 'Model:', modelRef.current ? 'loaded' : 'null')
+      }
       
       // Animate pivot transition smoothly (runs every frame for smooth animation)
       if (isAnimatingPivotRef.current && oldTargetRef.current && oldCameraPosRef.current && targetPivotRef.current && camera && controls) {
@@ -1634,6 +1703,11 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
     animate()
 
           return () => {
+            console.log('[IFCViewer] Component unmounting, cleaning up...')
+            
+            // CRITICAL: Reset loading guard so component can load on next mount
+            isLoadingRef.current = false
+            
             cancelAnimationFrame(animationId)
             window.removeEventListener('resize', handleResize)
             
@@ -1700,7 +1774,7 @@ export default function IFCViewer({ filename, gltfPath, gltfAvailable = false, e
         })
       }
     }
-  }, [filename, gltfPath])
+  }, [filename, gltfPath, isVisible])
 
   const updateVisibility = (model: THREE.Object3D) => {
     if (!model) return

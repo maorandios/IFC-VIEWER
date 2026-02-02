@@ -241,8 +241,11 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                     </td>
                   </tr>
                 ) : (
-                  filteredAssemblies.map((assembly, index) => (
-                    <Fragment key={assembly.assembly_mark}>
+                  filteredAssemblies.map((assembly, index) => {
+                    // Create unique key using assembly_mark and first element ID (handles duplicate assembly marks)
+                    const uniqueKey = `${assembly.assembly_mark}-${assembly.ids?.[0] || index}`;
+                    return (
+                    <Fragment key={uniqueKey}>
                       <tr className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 text-sm font-bold text-gray-900">{assembly.assembly_mark}</td>
                         <td className="px-4 py-3 text-sm font-medium text-blue-600">{assembly.main_profile}</td>
@@ -286,7 +289,7 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                         </td>
                       </tr>
                 {expandedAssemblies.has(assembly.assembly_mark) && (
-                        <tr key={`${assembly.assembly_mark}-expanded`}>
+                        <tr key={`${uniqueKey}-expanded`}>
                           <td colSpan={7} className="px-4 py-4 bg-gray-50">
                             <div className="space-y-6">
                               {/* Profiles Section */}
@@ -387,7 +390,8 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                         </tr>
                       )}
                     </Fragment>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
               {filteredAssemblies.length > 0 && (
