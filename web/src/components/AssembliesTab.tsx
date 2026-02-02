@@ -241,11 +241,8 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                     </td>
                   </tr>
                 ) : (
-                  filteredAssemblies.map((assembly, index) => {
-                    // Create unique key using assembly_mark and first element ID (handles duplicate assembly marks)
-                    const uniqueKey = `${assembly.assembly_mark}-${assembly.ids?.[0] || index}`;
-                    return (
-                    <Fragment key={uniqueKey}>
+                  filteredAssemblies.map((assembly, index) => (
+                    <Fragment key={assembly.assembly_mark}>
                       <tr className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 text-sm font-bold text-gray-900">{assembly.assembly_mark}</td>
                         <td className="px-4 py-3 text-sm font-medium text-blue-600">{assembly.main_profile}</td>
@@ -289,7 +286,7 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                         </td>
                       </tr>
                 {expandedAssemblies.has(assembly.assembly_mark) && (
-                        <tr key={`${uniqueKey}-expanded`}>
+                        <tr key={`${assembly.assembly_mark}-expanded`}>
                           <td colSpan={7} className="px-4 py-4 bg-gray-50">
                             <div className="space-y-6">
                               {/* Profiles Section */}
@@ -309,6 +306,7 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Preview</th>
                         </tr>
                       </thead>
                                       <tbody className="divide-y divide-gray-200">
@@ -327,6 +325,14 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                                             </td>
                                             <td className="px-4 py-2 text-sm text-right font-bold text-gray-900">
                                               {profile.total_weight ? profile.total_weight.toFixed(2) : 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-center">
+                                              <button
+                                                onClick={() => openPreview(profile.ids, `Profile: ${profile.part_name}`)}
+                                                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                              >
+                                                View 3D
+                                              </button>
                                             </td>
                                           </tr>
                                         ))}
@@ -355,6 +361,7 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Weight (kg)</th>
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
                                           <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Weight (kg)</th>
+                                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Preview</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-gray-200">
@@ -378,6 +385,14 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                                             <td className="px-4 py-2 text-sm text-right font-bold text-gray-900">
                                               {plate.total_weight ? plate.total_weight.toFixed(2) : 'N/A'}
                               </td>
+                                            <td className="px-4 py-2 text-center">
+                                              <button
+                                                onClick={() => openPreview(plate.ids, `Plate: ${plate.part_name}`)}
+                                                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                              >
+                                                View 3D
+                                              </button>
+                              </td>
                             </tr>
                                         ))}
                       </tbody>
@@ -390,8 +405,7 @@ export default function AssembliesTab({ filename, report }: AssembliesTabProps) 
                         </tr>
                       )}
                     </Fragment>
-                    );
-                  })
+                  ))
                 )}
               </tbody>
               {filteredAssemblies.length > 0 && (

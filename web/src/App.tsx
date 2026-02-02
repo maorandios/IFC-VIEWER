@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import FileUpload from './components/FileUpload'
 import IFCViewer from './components/IFCViewer'
+import IFCViewerWebIFC from './components/IFCViewerWebIFC_Enhanced'
 import SteelReports from './components/SteelReports'
 import NestingReport from './components/NestingReport'
 import Dashboard from './components/Dashboard'
@@ -57,6 +58,7 @@ function App() {
   })
   const [activeTab, setActiveTab] = useState<'model' | 'nesting' | 'dashboard' | 'profiles' | 'plates' | 'assemblies' | 'bolts' | 'fasteners' | 'plate-nesting' | 'shipment' | 'management'>(savedState?.activeTab || 'model')
   const [nestingReport, setNestingReport] = useState<NestingReportType | null>(null)  // Always start with null
+  const [useWebIFC, setUseWebIFC] = useState(false)  // Feature flag: false = GLTF (default), true = web-ifc (experimental)
 
   // Save to localStorage whenever state changes (but only save filters and activeTab, not file data)
   useEffect(() => {
@@ -231,102 +233,162 @@ function App() {
               </div>
             </div>
 
-            {/* Tab Content - All tabs rendered, inactive ones hidden for state persistence */}
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'dashboard' ? '' : 'hidden'}`}>
-              <Dashboard 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
-
-            {/* Model tab - Always rendered but hidden when not active for state persistence */}
-            <div className={`flex-1 flex overflow-hidden ${activeTab === 'model' ? '' : 'hidden'}`}>
-              <div className="flex-1 border-r relative">
-                <IFCViewer 
-                  filename={currentFile} 
-                  gltfPath={gltfPath} 
-                  gltfAvailable={gltfAvailable}
-                  enableMeasurement={true}
-                  enableClipping={true}
-                  filters={filters}
-                  report={report}
-                  isVisible={activeTab === 'model'}
-                />
-              </div>
-              <div className="w-96 overflow-y-auto">
-                <SteelReports 
-                  report={report} 
+            {/* Tab Content */}
+            {activeTab === 'dashboard' && (
+              <div className="flex-1 overflow-y-auto">
+                <Dashboard 
                   filename={currentFile}
-                  filters={filters}
-                  setFilters={setFilters}
+                  report={report}
                 />
               </div>
-            </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'profiles' ? '' : 'hidden'}`}>
-              <ProfilesTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'model' && (
+              <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 border-r relative">
+                  {/* Feature Toggle for web-ifc vs GLTF */}
+                  <div className="absolute top-4 right-4 z-10 bg-white rounded-lg shadow-lg p-3 border border-gray-200">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <span className="text-sm font-medium text-gray-700">Viewer:</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs ${!useWebIFC ? 'font-semibold text-blue-600' : 'text-gray-500'}`}>
+                          GLTF
+                        </span>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={useWebIFC}
+                            onChange={(e) => setUseWebIFC(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </div>
+                        <span className={`text-xs ${useWebIFC ? 'font-semibold text-blue-600' : 'text-gray-500'}`}>
+                          web-ifc
+                        </span>
+                      </div>
+                      {useWebIFC && (
+                        <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                          Experimental
+                        </span>
+                      )}
+                    </label>
+                  </div>
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'plates' ? '' : 'hidden'}`}>
-              <PlatesTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+                  {/* Render appropriate viewer based on toggle */}
+                  {useWebIFC ? (
+                    <IFCViewerWebIFC 
+                      filename={currentFile} 
+                      filters={filters}
+                      report={report}
+                      enableMeasurement={true}
+                      enableClipping={false}
+                    />
+                  ) : (
+                    <IFCViewer 
+                      filename={currentFile} 
+                      gltfPath={gltfPath} 
+                      gltfAvailable={gltfAvailable}
+                      enableMeasurement={true}
+                      enableClipping={true}
+                      filters={filters}
+                      report={report}
+                    />
+                  )}
+                </div>
+                <div className="w-96 overflow-y-auto">
+                  <SteelReports 
+                    report={report} 
+                    filename={currentFile}
+                    filters={filters}
+                    setFilters={setFilters}
+                  />
+                </div>
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'assemblies' ? '' : 'hidden'}`}>
-              <AssembliesTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'profiles' && (
+              <div className="flex-1 overflow-y-auto">
+                <ProfilesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'bolts' ? '' : 'hidden'}`}>
-              <BoltsTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'plates' && (
+              <div className="flex-1 overflow-y-auto">
+                <PlatesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'fasteners' ? '' : 'hidden'}`}>
-              <FastenersTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'assemblies' && (
+              <div className="flex-1 overflow-y-auto">
+                <AssembliesTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'plate-nesting' ? '' : 'hidden'}`}>
-              <PlateNestingTab 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'bolts' && (
+              <div className="flex-1 overflow-y-auto">
+                <BoltsTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-hidden ${activeTab === 'nesting' ? '' : 'hidden'}`}>
-              <NestingReport 
-                filename={currentFile} 
-                nestingReport={nestingReport}
-                onNestingReportChange={handleNestingReportChange}
-                report={report}
-              />
-            </div>
+            {activeTab === 'fasteners' && (
+              <div className="flex-1 overflow-y-auto">
+                <FastenersTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'shipment' ? '' : 'hidden'}`}>
-              <Shipment 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'plate-nesting' && (
+              <div className="flex-1 overflow-y-auto">
+                <PlateNestingTab 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
 
-            <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? '' : 'hidden'}`}>
-              <Management 
-                filename={currentFile}
-                report={report}
-              />
-            </div>
+            {activeTab === 'nesting' && (
+              <div className="flex-1 overflow-hidden">
+                <NestingReport 
+                  filename={currentFile} 
+                  nestingReport={nestingReport}
+                  onNestingReportChange={handleNestingReportChange}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'shipment' && (
+              <div className="flex-1 overflow-y-auto">
+                <Shipment 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
+
+            {activeTab === 'management' && (
+              <div className="flex-1 overflow-y-auto">
+                <Management 
+                  filename={currentFile}
+                  report={report}
+                />
+              </div>
+            )}
           </>
         )}
 

@@ -382,3 +382,4 @@ The optimization is **complete and ready for testing**!
 
 **Next Step:** Test with real IFC file to verify improvements.
 
+

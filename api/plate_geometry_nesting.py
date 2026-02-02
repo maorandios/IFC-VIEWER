@@ -413,3 +413,4 @@ def nest_with_rectangles(plates: List[PlateGeometry], stock_plates: List[Dict]) 
     pass
 
 
+

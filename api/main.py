@@ -953,6 +953,89 @@ async def get_report(filename: str):
     return JSONResponse(report)
 
 
+@app.post("/api/refined-geometry/{filename}")
+async def get_refined_geometry(filename: str, request: Request):
+    """Get high-quality geometry for specific elements using IfcOpenShell with boolean operations."""
+    try:
+        from urllib.parse import unquote
+        import base64
+        
+        decoded_filename = unquote(filename)
+        body = await request.json()
+        element_ids = body.get('element_ids', [])
+        
+        if not element_ids:
+            return JSONResponse({'geometries': [], 'count': 0})
+        
+        ifc_path = IFC_DIR / decoded_filename
+        if not ifc_path.exists():
+            raise HTTPException(status_code=404, detail="IFC file not found")
+        
+        print(f"[REFINE] Processing {len(element_ids)} elements for {decoded_filename}")
+        
+        import ifcopenshell
+        import ifcopenshell.geom
+        import numpy as np
+        
+        ifc_file = ifcopenshell.open(str(ifc_path))
+        
+        # Settings for high-quality geometry with boolean operations
+        settings = ifcopenshell.geom.settings()
+        settings.set(settings.USE_WORLD_COORDS, True)
+        settings.set(settings.WELD_VERTICES, True)
+        settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, False)  # KEY: Apply holes/cuts!
+        settings.set(settings.APPLY_DEFAULT_MATERIALS, True)
+        
+        geometries = []
+        
+        for element_id in element_ids:
+            try:
+                element = ifc_file.by_id(element_id)
+                shape = ifcopenshell.geom.create_shape(settings, element)
+                
+                # Get geometry data
+                verts_raw = shape.geometry.verts
+                faces_raw = shape.geometry.faces
+                
+                # Convert to numpy arrays
+                verts = np.array(verts_raw).reshape(-1, 3)
+                faces = np.array(faces_raw).reshape(-1, 3)
+                
+                # Flatten for transmission
+                verts_flat = verts.flatten().astype(np.float32)
+                indices_flat = faces.flatten().astype(np.uint32)
+                
+                # Encode as base64
+                verts_b64 = base64.b64encode(verts_flat.tobytes()).decode('utf-8')
+                indices_b64 = base64.b64encode(indices_flat.tobytes()).decode('utf-8')
+                
+                geometries.append({
+                    'element_id': element_id,
+                    'element_type': element.is_a(),
+                    'element_name': getattr(element, 'Name', 'Unknown'),
+                    'element_tag': getattr(element, 'Tag', ''),
+                    'vertices': verts_b64,
+                    'indices': indices_b64,
+                    'vertex_count': len(verts),
+                    'face_count': len(faces)
+                })
+                
+                print(f"[REFINE] ✓ Element {element_id} ({element.is_a()}): {len(verts)} vertices, {len(faces)} faces")
+                
+            except Exception as e:
+                print(f"[REFINE] ✗ Error refining element {element_id}: {e}")
+                continue
+        
+        print(f"[REFINE] Successfully refined {len(geometries)}/{len(element_ids)} elements")
+        return JSONResponse({'geometries': geometries, 'count': len(geometries)})
+    
+    except Exception as e:
+        print(f"[REFINE] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/ifc/{filename}")
 @app.head("/api/ifc/{filename}")
 async def get_ifc_file(filename: str):
@@ -1026,18 +1109,11 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
         settings.set(settings.USE_WORLD_COORDS, True)  # Use world coordinates for consistency
         settings.set(settings.WELD_VERTICES, True)
         # DISABLE_OPENING_SUBTRACTIONS = False means openings/holes ARE applied (not disabled)
-        settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, False)  # Keep enabled for accurate geometry
+        settings.set(settings.DISABLE_OPENING_SUBTRACTIONS, False)
         # Apply default materials
         settings.set(settings.APPLY_DEFAULT_MATERIALS, True)
         
-        # PERFORMANCE OPTIMIZATION: Add mesh deflection tolerance settings
-        # These control the tessellation quality - higher values = fewer triangles = faster conversion
-        # Values chosen to maintain visual quality and measurement accuracy while improving speed
-        settings.set(settings.MESHER_LINEAR_DEFLECTION, 0.5)  # 0.5mm tolerance - accurate for measurements
-        settings.set(settings.MESHER_ANGULAR_DEFLECTION, 0.5)  # 0.5 degrees - smooth curves with fewer triangles
-        
         print(f"[GLTF] Using WORLD coordinates, preserving original IFC axis orientation")
-        print(f"[GLTF] Mesh optimization enabled: linear_deflection=0.5mm, angular_deflection=0.5deg")
         
         # Helpers for color extraction
         def normalize_rgb(rgb_tuple):
@@ -1115,6 +1191,7 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                 fastener_keywords = ['bolt', 'nut', 'washer', 'fastener', 'screw', 'anchor', 'mechanical']
                 text_content = name + ' ' + desc + ' ' + tag
                 if any(kw in text_content for kw in fastener_keywords):
+                    print(f"[GLTF] Detected fastener by name/tag: {element_type} (ID: {product.id()}), Name='{name}', Tag='{tag}'")
                     return True
                 
                 # Check Tekla-specific property sets
@@ -1123,6 +1200,7 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                     for pset_name in psets.keys():
                         pset_lower = pset_name.lower()
                         if 'bolt' in pset_lower or 'fastener' in pset_lower or 'mechanical' in pset_lower:
+                            print(f"[GLTF] Detected fastener by property set: {element_type} (ID: {product.id()}), PSet='{pset_name}'")
                             return True
                 except:
                     pass
@@ -1133,19 +1211,14 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
             return False
 
         def get_element_color(product):
-            """Get color for IFC element - OPTIMIZED with early exit for performance.
-            
-            Performance optimization: Try fast methods first, skip expensive traversals.
-            Most IFC files use either style utilities or type-based colors.
-            """
+            """Get color for IFC element - try to extract from IFC, fallback to type-based defaults."""
             element_type = product.is_a()
 
             # Dark brown-gold for all fastener-like elements
             if is_fastener_like(product):
                 return (139, 105, 20)  # Dark brown-gold (0x8B6914 in RGB)
             
-            # OPTIMIZED: Try the most common method first (IfcOpenShell style utility)
-            # This covers 80%+ of cases where colors are defined
+            # Try to extract actual color from IFC element using IfcOpenShell utilities
             try:
                 import ifcopenshell.util.style
                 style = ifcopenshell.util.style.get_style(product)
@@ -1153,17 +1226,88 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                     for rendering in style.Styles or []:
                         if rendering.is_a('IfcSurfaceStyleRendering') and rendering.SurfaceColour:
                             rgb = normalize_rgb((rendering.SurfaceColour.Red, rendering.SurfaceColour.Green, rendering.SurfaceColour.Blue))
-                            if rgb and not (rgb[0] < 5 and rgb[1] < 5 and rgb[2] < 5):  # Skip near-black
-                                # Early exit - color found!
+                            if rgb:
+                                print(f"[GLTF] Extracted color from style for {element_type} (ID: {product.id()}): RGB{rgb}")
                                 return rgb
+                        # Some styles may expose color differently
+                        maybe_rgb = extract_style_color(rendering)
+                        if maybe_rgb:
+                            print(f"[GLTF] Extracted color from style (alt) for {element_type} (ID: {product.id()}): RGB{maybe_rgb}")
+                            return maybe_rgb
             except Exception:
                 pass
             
-            # OPTIMIZED: Skip expensive material traversals - go straight to type-based fallback
-            # In steel structures, most elements use standard colors per type anyway
-            # This skips 3 expensive IFC relationship traversals (HasAssignments, Materials, Representation tree)
+            # Try to get color from presentation style assignments
+            try:
+                if hasattr(product, 'HasAssignments'):
+                    for assignment in product.HasAssignments or []:
+                        if assignment.is_a('IfcStyledItem'):
+                            for style in assignment.Styles or []:
+                                if style.is_a('IfcSurfaceStyle'):
+                                    for rendering in style.Styles or []:
+                                        if rendering.is_a('IfcSurfaceStyleRendering') and rendering.SurfaceColour:
+                                            rgb = normalize_rgb((rendering.SurfaceColour.Red, rendering.SurfaceColour.Green, rendering.SurfaceColour.Blue))
+                                            if rgb:
+                                                print(f"[GLTF] Extracted color from assignment for {element_type} (ID: {product.id()}): RGB{rgb}")
+                                                return rgb
+                                        maybe_rgb = extract_style_color(rendering)
+                                        if maybe_rgb:
+                                            print(f"[GLTF] Extracted color from assignment (alt) for {element_type} (ID: {product.id()}): RGB{maybe_rgb}")
+                                            return maybe_rgb
+            except Exception:
+                pass
             
-            # Fallback to type-based color map (covers most steel structure needs)
+            # Try to get color from material styles and representation items
+            try:
+                materials = ifcopenshell.util.element.get_materials(product)
+                for material in materials:
+                    if hasattr(material, 'HasRepresentation'):
+                        for rep in material.HasRepresentation or []:
+                            if rep.is_a('IfcStyledRepresentation'):
+                                for item in rep.Items or []:
+                                    if item.is_a('IfcStyledItem'):
+                                        for style in item.Styles or []:
+                                            if style.is_a('IfcSurfaceStyle'):
+                                                for rendering in style.Styles or []:
+                                                    if rendering.is_a('IfcSurfaceStyleRendering') and rendering.SurfaceColour:
+                                                        rgb = normalize_rgb((rendering.SurfaceColour.Red, rendering.SurfaceColour.Green, rendering.SurfaceColour.Blue))
+                                                        if rgb:
+                                                            print(f"[GLTF] Extracted color from material for {element_type} (ID: {product.id()}): RGB{rgb}")
+                                                            return rgb
+                                                    maybe_rgb = extract_style_color(rendering)
+                                                    if maybe_rgb:
+                                                        print(f"[GLTF] Extracted color from material (alt) for {element_type} (ID: {product.id()}): RGB{maybe_rgb}")
+                                                        return maybe_rgb
+            except Exception:
+                pass
+
+            # Try to walk the product representation tree for styled items
+            try:
+                if hasattr(product, "Representation") and product.Representation:
+                    for rep in product.Representation.Representations or []:
+                        for item in rep.Items or []:
+                            styled_items = []
+                            if item.is_a("IfcStyledItem"):
+                                styled_items.append(item)
+                            if hasattr(item, "StyledByItem"):
+                                styled_items.extend(item.StyledByItem or [])
+                            for s_item in styled_items:
+                                for style in s_item.Styles or []:
+                                    if style.is_a('IfcSurfaceStyle'):
+                                        for rendering in style.Styles or []:
+                                            if rendering.is_a('IfcSurfaceStyleRendering') and rendering.SurfaceColour:
+                                                rgb = normalize_rgb((rendering.SurfaceColour.Red, rendering.SurfaceColour.Green, rendering.SurfaceColour.Blue))
+                                                if rgb:
+                                                    print(f"[GLTF] Extracted color from representation for {element_type} (ID: {product.id()}): RGB{rgb}")
+                                                    return rgb
+                                            maybe_rgb = extract_style_color(rendering)
+                                            if maybe_rgb:
+                                                print(f"[GLTF] Extracted color from representation (alt) for {element_type} (ID: {product.id()}): RGB{maybe_rgb}")
+                                                return maybe_rgb
+            except Exception:
+                pass
+            
+            # Fallback to type-based color map if no color found in IFC
             color_map = {
                 "IfcBeam": (180, 180, 220),      # Light blue-gray
                 "IfcColumn": (150, 200, 220),    # Light blue
@@ -1185,16 +1329,6 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
         assembly_marks = []  # Store assembly marks for each mesh
         failed_count = 0
         skipped_count = 0
-        
-        # PERFORMANCE: Track color sources with counters instead of per-element logging
-        color_stats = {
-            'geometry_colors': 0,       # Colors from geometry data
-            'material_colors': 0,       # Colors from material definitions
-            'ifc_style_colors': 0,      # Colors from IFC style utilities
-            'default_colors': 0,        # Fallback type-based colors
-            'fasteners': 0,             # Fasteners forced to gold
-            'near_black_ignored': 0     # Near-black colors ignored
-        }
         
         # Get all products with geometry
         products = ifc_file.by_type("IfcProduct")
@@ -1288,6 +1422,7 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                 # Skip geometry color extraction for fasteners - they always get gold
                 if is_fastener:
                     colors = None  # Don't use any geometry colors for fasteners
+                    print(f"[GLTF] Skipping geometry color extraction for fastener product {product.id()}")
                 
                 # First, try to get color from geometry (if IfcOpenShell extracted it)
                 if colors is not None and len(colors) > 0:
@@ -1315,9 +1450,9 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                             # Normalize 0-1 or 0-255 to 0-255
                             color_rgb = normalize_rgb((avg_color[0], avg_color[1], avg_color[2]))
                             if color_rgb:
-                                color_stats['geometry_colors'] += 1
-                    except Exception:
-                        pass  # Silently skip geometry color parsing errors
+                                print(f"[GLTF] Using geometry color for product {product.id()}: {color_rgb} (use_geometry_colors={use_geometry_colors})")
+                    except Exception as e:
+                        print(f"[GLTF] Warning: Could not parse geometry colors: {e}")
                 
                 # If still no color, try material definitions from geometry
                 if color_rgb is None:
@@ -1357,34 +1492,32 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                                     if color_rgb is not None:
                                         if color_rgb[0] < 5 and color_rgb[1] < 5 and color_rgb[2] < 5:
                                             # Reset to None so get_element_color (type-based map) is used instead
-                                            color_stats['near_black_ignored'] += 1
+                                            print(f"[GLTF] Ignoring near-black material color for product {product.id()}: {color_rgb}")
                                             color_rgb = None
                                         else:
-                                            color_stats['material_colors'] += 1
-                                except Exception:
-                                    pass  # Silently skip material color read errors
-                    except Exception:
-                        pass  # Silently skip geometry material parsing errors
+                                            print(f"[GLTF] Using material color for product {product.id()}: {color_rgb}")
+                                except Exception as e:
+                                    print(f"[GLTF] Warning: material color read failed for product {product.id()}: {e}")
+                    except Exception as e:
+                        print(f"[GLTF] Warning: Could not parse geometry materials: {e}")
                 
                 # If no geometry color, try IFC extraction (but skip for fasteners - they get gold)
                 if color_rgb is None and not is_fastener:
                     color_rgb = get_element_color(product)
                     if color_rgb != (190, 190, 220):  # Not default color
-                        color_stats['ifc_style_colors'] += 1
-                    else:
-                        color_stats['default_colors'] += 1
+                        print(f"[GLTF] Using extracted IFC color for product {product.id()}: {color_rgb}")
                 
                 # If this is a fastener-like element, always force the gold color
                 if is_fastener:
                     color_rgb = (139, 105, 20)  # Dark brown-gold
                     use_geometry_colors = False
+                    # Ensure colors is None so we don't use any black geometry colors
                     colors = None
-                    color_stats['fasteners'] += 1
+                    print(f"[GLTF] Forcing gold color for fastener product {product.id()}")
                 
-                # OPTIMIZED: Create trimesh with proper visual settings from the start
-                # This avoids redundant mesh recreation for fasteners
+                # Create trimesh object
                 try:
-                    mesh = trimesh.Trimesh(vertices=vertices, faces=face_indices, process=False)
+                    mesh = trimesh.Trimesh(vertices=vertices, faces=face_indices)
                 except Exception as e:
                     print(f"[GLTF] Error creating trimesh: {e}")
                     failed_count += 1
@@ -1395,25 +1528,30 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                     # Convert RGB (0-255) to normalized (0-1) for trimesh material
                     color_normalized = [c / 255.0 for c in color_rgb]
                     
-                    # OPTIMIZED: Create correct material once - no need to recreate mesh later
+                    # Create PBR material with color - ensure it's properly set
                     try:
-                        # For fasteners, ALWAYS use gold color in material, no vertex colors
-                        # For non-fasteners, use white material if geometry has colors, otherwise use element color
+                        # For fasteners, ALWAYS use gold color in material, regardless of geometry colors
+                        # For non-fasteners, if geometry provided explicit colors, keep material white to let vertex colors show naturally.
                         if is_fastener:
-                            # Gold color for fasteners - FINAL, no vertex colors will be added
-                            base_color_factor = color_normalized + [1.0]
+                            # Force gold color for fasteners
+                            base_color_factor = color_normalized + [1.0]  # Dark brown-gold color (139, 105, 20) normalized
+                            print(f"[GLTF] Setting baseColorFactor to gold for fastener product {product.id()}: {base_color_factor}")
                         else:
                             base_color_factor = [1.0, 1.0, 1.0, 1.0] if use_geometry_colors else color_normalized + [1.0]
-                        
                         material = trimesh.visual.material.PBRMaterial(
                             baseColorFactor=base_color_factor,  # RGBA
                             metallicFactor=0.2,
                             roughnessFactor=0.8,
-                            doubleSided=True
+                            doubleSided=True  # Ensure both sides are visible
                         )
-                        # Tag material with IFC element type
+                        # Tag material with IFC element type so viewer can detect fasteners etc.
+                        # If this is a fastener (detected by name/tag even if not IfcFastener entity), tag it specially
                         try:
-                            material.name = "IfcFastener_Detected" if is_fastener else str(element_type)
+                            if is_fastener:
+                                # Tag as fastener so frontend can detect it
+                                material.name = "IfcFastener_Detected"
+                            else:
+                                material.name = str(element_type)
                         except Exception:
                             pass
                         mesh.visual.material = material
@@ -1431,6 +1569,7 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                                         else:
                                             face_colors.append([fc[0] * 255.0, fc[1] * 255.0, fc[2] * 255.0, 255.0])
                                     mesh.visual.face_colors = np.array(face_colors)
+                                    print(f"[GLTF] Applied per-face colors for product {product.id()} (faces={len(face_colors)})")
                                 # Case 2: per-vertex colors
                                 elif color_array.ndim >= 2 and color_array.shape[0] >= len(vertices) and color_array.shape[1] >= 3:
                                     vertex_colors = []
@@ -1441,6 +1580,7 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                                         else:
                                             vertex_colors.append([c[0], c[1], c[2], 1.0])
                                     mesh.visual.vertex_colors = np.array(vertex_colors)
+                                    print(f"[GLTF] Applied per-vertex colors for product {product.id()} (count={len(vertex_colors)})")
                                 # Case 3: list of style dicts matching faces
                                 elif isinstance(colors, list) and len(colors) == len(face_indices):
                                     face_colors = []
@@ -1451,21 +1591,32 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                                         else:
                                             face_colors.append([color_rgb[0], color_rgb[1], color_rgb[2], 255])
                                     mesh.visual.face_colors = np.array(face_colors)
+                                    print(f"[GLTF] Applied per-face style colors for product {product.id()} (faces={len(face_colors)})")
                                 else:
                                     # fallback to uniform - but NOT for fasteners
                                     if not is_fastener:
                                         mesh.visual.vertex_colors = np.tile(color_normalized + [1.0], (len(mesh.vertices), 1))
-                            except Exception:
+                                    else:
+                                        print(f"[GLTF] Skipping uniform vertex colors for fastener product {product.id()} - using material color only")
+                            except Exception as e:
+                                print(f"[GLTF] Warning: Could not apply geometry-driven colors, using uniform: {e}")
                                 # Don't set vertex colors for fasteners - let material color show through
                                 if not is_fastener:
                                     mesh.visual.vertex_colors = np.tile(color_normalized + [1.0], (len(mesh.vertices), 1))
+                                else:
+                                    print(f"[GLTF] Skipping vertex colors in exception handler for fastener product {product.id()} - using material color only")
                         else:
                             # Use uniform color for all vertices
                             # For fasteners, DON'T set vertex colors - let material color show through
-                            if not is_fastener:
+                            if is_fastener:
+                                # Don't set vertex colors for fasteners - material color will be used
+                                # This prevents black vertex colors from overriding the gold material
+                                print(f"[GLTF] Skipping vertex colors for fastener product {product.id()} - using material color only")
+                            else:
                                 mesh.visual.vertex_colors = np.tile(color_normalized + [1.0], (len(mesh.vertices), 1))
-                    except Exception:
+                    except Exception as e:
                         # Fallback: use simple material with color
+                        print(f"[GLTF] Warning: Could not set PBR material for product {product.id()}, using SimpleMaterial: {e}")
                         try:
                             # For fasteners, ensure gold color even in fallback
                             if is_fastener:
@@ -1483,15 +1634,58 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                                 pass
                             mesh.visual.material = material
                             # Set vertex colors as backup - but NOT for fasteners (let material show)
-                            if not is_fastener:
+                            if is_fastener:
+                                # Don't set vertex colors - material color will be used
+                                print(f"[GLTF] Skipping vertex colors in fallback for fastener product {product.id()} - using material color only")
+                            else:
                                 mesh.visual.vertex_colors = np.tile(color_rgb + [255], (len(mesh.vertices), 1))
-                        except Exception:
+                        except Exception as e2:
                             # Last resort: set vertex colors directly - but NOT for fasteners
+                            print(f"[GLTF] Warning: Could not set material, using vertex colors only: {e2}")
+                            # For fasteners, we still don't want vertex colors - they should use material
                             if not is_fastener:
                                 mesh.visual.vertex_colors = np.tile(color_rgb + [255], (len(mesh.vertices), 1))
+                            else:
+                                print(f"[GLTF] Skipping vertex colors in last resort for fastener product {product.id()} - using material color only")
                     
-                    # OPTIMIZED: No need for color clearing - fasteners never get vertex colors in the first place
-                    # Material is set correctly from the start
+                    # CRITICAL: For fasteners, explicitly clear ANY existing vertex/face colors before export
+                    # This ensures the glTF file doesn't contain vertex colors that override the material
+                    if is_fastener:
+                        # Clear vertex colors if they exist - do this multiple ways to be sure
+                        if hasattr(mesh.visual, 'vertex_colors'):
+                            mesh.visual.vertex_colors = None
+                            # Also try to delete the attribute if it exists
+                            if hasattr(mesh.visual, '__dict__') and 'vertex_colors' in mesh.visual.__dict__:
+                                del mesh.visual.__dict__['vertex_colors']
+                            print(f"[GLTF] Cleared vertex_colors for fastener product {product.id()}")
+                        # Clear face colors if they exist
+                        if hasattr(mesh.visual, 'face_colors'):
+                            mesh.visual.face_colors = None
+                            if hasattr(mesh.visual, '__dict__') and 'face_colors' in mesh.visual.__dict__:
+                                del mesh.visual.__dict__['face_colors']
+                            print(f"[GLTF] Cleared face_colors for fastener product {product.id()}")
+                        # Ensure material color is set correctly - FORCE it to gold
+                        try:
+                            if hasattr(mesh.visual, 'material') and mesh.visual.material:
+                                # Force gold color in material
+                                gold_normalized = [139/255.0, 105/255.0, 20/255.0, 1.0]  # Dark brown-gold
+                                if hasattr(mesh.visual.material, 'baseColorFactor'):
+                                    mesh.visual.material.baseColorFactor = gold_normalized
+                                    print(f"[GLTF] FORCED baseColorFactor to gold for fastener product {product.id()}: {gold_normalized}")
+                                # Also try to set color directly if the material supports it
+                                if hasattr(mesh.visual.material, 'color'):
+                                    try:
+                                        mesh.visual.material.color = gold_normalized[:3]
+                                        print(f"[GLTF] Set material.color to gold for fastener product {product.id()}")
+                                    except:
+                                        pass
+                        except Exception as e:
+                            print(f"[GLTF] Warning: Could not update material for fastener product {product.id()}: {e}")
+                        # Final verification
+                        if hasattr(mesh.visual, 'vertex_colors') and mesh.visual.vertex_colors is not None:
+                            print(f"[GLTF] WARNING: vertex_colors still exist for fastener product {product.id()} after clearing!")
+                        if hasattr(mesh.visual, 'face_colors') and mesh.visual.face_colors is not None:
+                            print(f"[GLTF] WARNING: face_colors still exist for fastener product {product.id()} after clearing!")
                     
                     # Store assembly mark and product info in mesh metadata and name
                     try:
@@ -1527,12 +1721,6 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
                 continue
         
         print(f"[GLTF] Conversion summary: {len(meshes)} meshes created, {skipped_count} skipped, {failed_count} failed")
-        print(f"[GLTF] Color sources: {color_stats['geometry_colors']} geometry, "
-              f"{color_stats['material_colors']} material, "
-              f"{color_stats['ifc_style_colors']} IFC style, "
-              f"{color_stats['default_colors']} default, "
-              f"{color_stats['fasteners']} fasteners, "
-              f"{color_stats['near_black_ignored']} black ignored")
         
         if not meshes:
             error_msg = f"No valid geometry found in IFC file. Processed {len(products)} products, {skipped_count} skipped, {failed_count} failed."
@@ -1543,9 +1731,79 @@ def convert_ifc_to_gltf(ifc_path: Path, gltf_path: Path) -> bool:
             print(f"[GLTF] ERROR: {error_msg}")
             raise Exception(error_msg)
         
-        # OPTIMIZED: No need for separate fastener mesh cleaning pass
-        # Meshes are created correctly the first time with proper materials and no vertex colors
-        cleaned_meshes = meshes
+        # CRITICAL: For fasteners, recreate meshes with completely clean geometry (no vertex/face colors)
+        # This ensures the glTF exporter has NO color data to include
+        print(f"[GLTF] Cleaning fastener meshes before export...")
+        cleaned_meshes = []
+        for i, mesh in enumerate(meshes):
+            product_id = product_ids[i] if i < len(product_ids) else None
+            # Check if this is a fastener by material name
+            is_fastener_mesh = False
+            if hasattr(mesh, 'visual') and mesh.visual and hasattr(mesh.visual, 'material'):
+                mat = mesh.visual.material
+                if hasattr(mat, 'name') and mat.name and 'fastener' in str(mat.name).lower():
+                    is_fastener_mesh = True
+            
+            if is_fastener_mesh:
+                # Create a COMPLETELY NEW mesh with only geometry data - no visual data at all
+                print(f"[GLTF] Recreating clean mesh for fastener (product ID: {product_id})")
+                clean_mesh = trimesh.Trimesh(
+                    vertices=mesh.vertices.copy(),
+                    faces=mesh.faces.copy(),
+                    process=False  # Don't process - we want exact geometry
+                )
+                # Preserve metadata from original mesh
+                if hasattr(mesh, 'metadata') and mesh.metadata:
+                    clean_mesh.metadata = mesh.metadata.copy()
+                elif product_id and i < len(assembly_marks):
+                    # Reconstruct metadata if it was lost
+                    clean_mesh.metadata = {
+                        'product_id': product_id,
+                        'assembly_mark': assembly_marks[i] if i < len(assembly_marks) else 'N/A',
+                        'element_type': 'IfcFastener'
+                    }
+                # Now apply ONLY the material - no vertex/face colors
+                gold_normalized = [235/255.0, 190/255.0, 40/255.0, 1.0]
+                try:
+                    material = trimesh.visual.material.PBRMaterial(
+                        baseColorFactor=gold_normalized,
+                        metallicFactor=0.7,
+                        roughnessFactor=0.35,
+                        doubleSided=True
+                    )
+                    material.name = "IfcFastener_Detected"
+                    clean_mesh.visual.material = material
+                    print(f"[GLTF] Applied clean gold material to fastener mesh (product ID: {product_id})")
+                except Exception as e:
+                    print(f"[GLTF] Warning: Could not set PBR material for fastener, using SimpleMaterial: {e}")
+                    try:
+                        material = trimesh.visual.material.SimpleMaterial(
+                            diffuse=[139, 105, 20, 255],  # Dark brown-gold
+                            doubleSided=True
+                        )
+                        material.name = "IfcFastener_Detected"
+                        clean_mesh.visual.material = material
+                    except Exception as e2:
+                        print(f"[GLTF] Error setting SimpleMaterial for fastener: {e2}")
+                
+                # CRITICAL: Ensure NO vertex or face colors exist
+                if hasattr(clean_mesh.visual, 'vertex_colors'):
+                    clean_mesh.visual.vertex_colors = None
+                if hasattr(clean_mesh.visual, 'face_colors'):
+                    clean_mesh.visual.face_colors = None
+                
+                # Verify no colors exist
+                if hasattr(clean_mesh.visual, 'vertex_colors') and clean_mesh.visual.vertex_colors is not None:
+                    print(f"[GLTF] ERROR: Clean mesh still has vertex_colors for fastener (product ID: {product_id})!")
+                if hasattr(clean_mesh.visual, 'face_colors') and clean_mesh.visual.face_colors is not None:
+                    print(f"[GLTF] ERROR: Clean mesh still has face_colors for fastener (product ID: {product_id})!")
+                
+                cleaned_meshes.append(clean_mesh)
+            else:
+                # Non-fastener - keep as is
+                cleaned_meshes.append(mesh)
+        
+        print(f"[GLTF] Cleaned {sum(1 for m in cleaned_meshes if hasattr(m.visual, 'material') and hasattr(m.visual.material, 'name') and m.visual.material.name and 'fastener' in str(m.visual.material.name).lower())} fastener meshes")
         
         # Export to glTF/GLB - keep meshes separate to preserve colors
         # Ensure the directory exists

@@ -96,3 +96,4 @@ if bolt_name and bolt_length:
 **Previous:** Ratio-based filtering (50-60% threshold)  
 **Current:** Strict equality check (name length = actual length)
 
+

@@ -174,3 +174,4 @@ After:  Large bold "1" with black outline (crystal clear!)
 **Changes:** Clearer SVG numbers + sequential table numbering  
 **Impact:** Much better readability and perfect SVG-table correlation
 
+

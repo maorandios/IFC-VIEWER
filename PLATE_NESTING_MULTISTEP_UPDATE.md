@@ -178,3 +178,4 @@ const [currentStep, setCurrentStep] = useState<Step>('selectPlates')
 - Cost calculations based on material prices
 
 
+

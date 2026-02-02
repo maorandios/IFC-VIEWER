@@ -180,3 +180,4 @@ adaptiveFontSize = max(15, 9) = 15px (still readable!)
 **Changes:** Dark gray numbers + grayscale gradient + always show numbers  
 **Impact:** Professional, clear, complete plate identification in SVG
 
+

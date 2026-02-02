@@ -251,3 +251,4 @@ Bolt holes not showing because they're separate objects, not geometry cutouts
 **App:** Running on http://localhost:5180  
 **Action:** Refresh browser (Ctrl+F5) to see bolt holes!
 
+

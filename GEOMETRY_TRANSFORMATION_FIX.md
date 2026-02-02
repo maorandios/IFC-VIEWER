@@ -85,3 +85,4 @@ Tested with `Sadnat_Rivud_-_approve.ifc`:
 
 When using IfcOpenShell's `USE_WORLD_COORDS` setting, always check whether you need to apply the transformation matrix manually. Using world coordinates means the transformation is already applied by the geometry engine.
 
+

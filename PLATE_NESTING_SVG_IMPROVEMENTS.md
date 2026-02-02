@@ -178,3 +178,4 @@ Clear correlation: Number in SVG → Row in table!
 **Changes:** SVG number display + grouped duplicate plates in table  
 **Impact:** Much cleaner and more professional plate nesting display
 
+

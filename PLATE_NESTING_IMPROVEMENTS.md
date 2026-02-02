@@ -133,3 +133,4 @@ The Plate Nesting tab has been completely redesigned to provide a proper workflo
 - Support for multiple material types/thicknesses per stock
 
 
+
